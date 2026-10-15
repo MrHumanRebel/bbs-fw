@@ -9,9 +9,19 @@
 #ifndef _VERSION_H_
 #define _VERSION_H_
 
-#define VERSION_MAJOR		1
-#define VERSION_MINOR		5
-#define VERSION_PATCH		99
+#ifndef VERSION_MAJOR
+#define VERSION_MAJOR 2
+#endif
+#ifndef VERSION_MINOR
+#define VERSION_MINOR 0
+#endif
+#ifndef VERSION_PATCH
+#define VERSION_PATCH 0
+#endif
+
+#if VERSION_MAJOR < 0 || VERSION_MAJOR > 255 || VERSION_MINOR < 0 || VERSION_MINOR > 255 || VERSION_PATCH < 0 || VERSION_PATCH > 255
+#error Firmware version components must fit in one byte
+#endif
 
 
 #if defined(BBSHD)

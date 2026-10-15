@@ -1,7 +1,13 @@
 # BBSHD/BBS02/TSDZ2 Open Source Firmware
 
-![GitHub all releases](https://img.shields.io/github/downloads/danielnilsson9/bbs-fw/total?style=for-the-badge)
-![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/danielnilsson9/bbs-fw?include_prereleases&style=for-the-badge)
+Automatic builds and versioned releases are configured for
+[MrHumanRebel/bbs-fw](https://github.com/MrHumanRebel/bbs-fw/releases), starting
+at **v2.0.0**. Merges to `main`/`master` build all three firmware targets and a
+standalone Windows configuration tool. See [automatic releases](doc/automatic-releases.md)
+for downloads, versioning and failure recovery.
+
+![GitHub all releases](https://img.shields.io/github/downloads/MrHumanRebel/bbs-fw/total?style=for-the-badge)
+![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/MrHumanRebel/bbs-fw?include_prereleases&style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/danielnilsson9/bbs-fw?style=for-the-badge)
 
 This firmware is intended to replace the original Bafang firmware on the BBSHD/BBS02 motor controller. Almost all functionality of original firmware has been implemented and additional features have been added.
@@ -13,7 +19,7 @@ The firmware is also compatible with the TongSheng TSDZ2 controller but requires
 ⚠️ Warning: The firmware should NOT be flashed or configured while the eBike battery is charging!
 
 **Download**  
-https://github.com/danielnilsson9/bbshd-fw/releases
+https://github.com/MrHumanRebel/bbs-fw/releases
 
 **Install**  
 https://github.com/danielnilsson9/bbs-fw/wiki/Flash-Firmware-(BBS02-&-BBSHD)
