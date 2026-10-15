@@ -28,7 +28,11 @@
 #define DISCARD		-1
 
 
-#define BUFFER_SIZE			192
+// Largest supported request is WRITE_CONFIG: header + payload + checksum.
+#define BUFFER_SIZE (sizeof(config_t) + 5u)
+#if CONFIG_VERSION != 5
+#error Review maximum protocol request size when changing the configuration schema.
+#endif
 #define DISCARD_TIMEOUT_MS	50
 
 #define REQUEST_TYPE_READ						0x01
@@ -48,6 +52,7 @@
 #define OPCODE_WRITE_CONFIG						0xf1
 #define OPCODE_WRITE_RESET_CONFIG				0xf2
 #define OPCODE_WRITE_ADC_VOLTAGE_CALIBRATION	0xf3
+#define OPCODE_WRITE_VIRTUAL_CONTROL 0xf4
 
 
 // Bafang display communication
@@ -97,6 +102,7 @@ static int16_t process_read_fw_version();
 static int16_t process_read_evtlog_enable();
 static int16_t process_read_config();
 static int16_t process_read_status();
+static int16_t process_write_virtual_control();
 
 static int16_t process_write_evtlog_enable();
 static int16_t process_write_config();
@@ -142,54 +148,45 @@ void extcom_init()
 
 void extcom_process()
 {
-	uint32_t now = system_ms();
-
-	while (uart_available())
-	{
-		if (msg_len == BUFFER_SIZE || (discard_until_ms != 0 && now < discard_until_ms))
-		{
-			// communication error, reset
-			msg_len = 0;
-			while (uart_available()) uart_read();
-		}
-		else
-		{
-			msgbuf[msg_len++] = uart_read();
-			last_recv_ms = now;
-			discard_until_ms = 0;
-		}	
-	}
-
-	if (msg_len > 0 && now - last_recv_ms > 100)
-	{
-		// communication error, reset
-		msg_len = 0;
-	}
-
-	int16_t res = try_process_request();
-	if (res == DISCARD)
+	if (msg_len > 0 && (uint32_t)(system_ms() - last_recv_ms) > 100)
 	{
 		msg_len = 0;
-		last_recv_ms = 0;
-		// Discard received data for the next DISCARD_TIMEOUT_MS milliseconds
-		discard_until_ms = now + DISCARD_TIMEOUT_MS;
-
-		eventlog_write(EVT_ERROR_EXTCOM_DISCARD);
 	}
-	else if (res > 0)
+
+	// Dispatch complete requests before accepting the next byte. The buffer
+	// needs room for one maximum frame, not a maximum frame plus its successor.
+	do
 	{
-		if (res < msg_len)
+		if (uart_available())
 		{
-			// will not occur due to request/response communication
-			memcpy(msgbuf, msgbuf + res, msg_len - res);
-			msg_len -= res;
+			if (msg_len == BUFFER_SIZE || (discard_until_ms != 0 && system_ms() < discard_until_ms))
+			{
+				msg_len = 0;
+				while (uart_available()) uart_read();
+			}
+			else
+			{
+				msgbuf[msg_len++] = uart_read();
+				last_recv_ms = system_ms();
+				discard_until_ms = 0;
+			}
 		}
-		else
+
+		int16_t res = try_process_request();
+		if (res == DISCARD)
 		{
 			msg_len = 0;
 			last_recv_ms = 0;
+			discard_until_ms = system_ms() + DISCARD_TIMEOUT_MS;
+			eventlog_write(EVT_ERROR_EXTCOM_DISCARD);
 		}
-	}
+		else if (res > 0)
+		{
+			// Byte-wise dispatch never buffers the next request behind this one.
+			msg_len = 0;
+			last_recv_ms = 0;
+		}
+	} while (uart_available());
 }
 
 
@@ -264,6 +261,8 @@ static int16_t try_process_write_request()
 
 	switch (msgbuf[1])
 	{
+	case OPCODE_WRITE_VIRTUAL_CONTROL:
+		return process_write_virtual_control();
 	case OPCODE_WRITE_EVTLOG_ENABLE:
 		return process_write_evtlog_enable();
 	case OPCODE_WRITE_CONFIG:
@@ -419,8 +418,43 @@ static int16_t process_read_config()
 
 static int16_t process_read_status()
 {
-	// :TODO:
-	return 0;
+	if (msg_len < 3) return KEEP;
+	if (compute_checksum(msgbuf, 2) != msgbuf[2]) return DISCARD;
+	uint16_t voltage = motor_get_battery_voltage_x10();
+	uint16_t current = motor_get_battery_current_x10();
+	uint16_t rpm = speed_sensor_get_rpm_x10();
+	uint16_t wheel = EXPAND_U16(g_config.wheel_size_inch_x10_u16h, g_config.wheel_size_inch_x10_u16l);
+	uint8_t checksum = 0;
+	write_uart_and_increment_checksum(REQUEST_TYPE_READ, &checksum);
+	write_uart_and_increment_checksum(OPCODE_READ_STATUS, &checksum);
+	write_uart_and_increment_checksum(1, &checksum); // telemetry schema
+	write_uart_and_increment_checksum(voltage >> 8, &checksum);
+	write_uart_and_increment_checksum((uint8_t)voltage, &checksum);
+	write_uart_and_increment_checksum(current >> 8, &checksum);
+	write_uart_and_increment_checksum((uint8_t)current, &checksum);
+	write_uart_and_increment_checksum(rpm >> 8, &checksum);
+	write_uart_and_increment_checksum((uint8_t)rpm, &checksum);
+	write_uart_and_increment_checksum(wheel >> 8, &checksum);
+	write_uart_and_increment_checksum((uint8_t)wheel, &checksum);
+	write_uart_and_increment_checksum(app_get_assist_level(), &checksum);
+	write_uart_and_increment_checksum(app_get_status_code(), &checksum);
+	write_uart_and_increment_checksum(app_virtual_throttle(), &checksum);
+	uart_write(checksum);
+	return 3;
+}
+
+static int16_t process_write_virtual_control()
+{
+	if (msg_len < 7) return KEEP;
+	if (compute_checksum(msgbuf, 6) != msgbuf[6]) return DISCARD;
+	bool accepted = app_virtual_control(msgbuf[3], msgbuf[4], msgbuf[5]);
+	uint8_t checksum = 0;
+	write_uart_and_increment_checksum(REQUEST_TYPE_WRITE, &checksum);
+	write_uart_and_increment_checksum(OPCODE_WRITE_VIRTUAL_CONTROL, &checksum);
+	write_uart_and_increment_checksum(msgbuf[2], &checksum); // request sequence
+	write_uart_and_increment_checksum(accepted, &checksum);
+	uart_write(checksum);
+	return 7;
 }
 
 static int16_t process_write_evtlog_enable()

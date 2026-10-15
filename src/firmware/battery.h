@@ -14,6 +14,9 @@
 void battery_init();
 void battery_process();
 
+// Slowly filtered voltage for PAS power compensation; zero if unavailable.
+uint16_t battery_get_filtered_voltage_x100();
+
 uint8_t battery_get_percent();
 uint8_t battery_get_mapped_percent();
 

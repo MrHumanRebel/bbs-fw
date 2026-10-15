@@ -22,6 +22,7 @@
 			<RowDefinition Height="Auto" />
 			<RowDefinition Height="Auto" />
 			<RowDefinition Height="Auto" />
+			<RowDefinition Height="Auto" />
 			<RowDefinition />
 		</Grid.RowDefinitions>
 
@@ -172,6 +173,24 @@
 				</Style>
 			</TextBox.Style>
 		</TextBox>
+
+		<CheckBox Grid.Row="8" Grid.ColumnSpan="2" Margin="0 8 0 0"
+			Content="Compensate battery voltage drop"
+			IsChecked="{Binding IsVoltageCompensationEnabled}">
+			<CheckBox.ToolTip>
+				<TextBlock Width="300" TextWrapping="Wrap"
+					Text="Keeps cadence/variable PAS power more consistent as the battery discharges, within this level's Max Current limit. Uses the configured maximum battery voltage as reference. Throttle is unchanged. Torque PAS already compensates voltage." />
+			</CheckBox.ToolTip>
+			<CheckBox.Style>
+				<Style TargetType="{x:Type CheckBox}">
+					<Style.Triggers>
+						<DataTrigger Binding="{Binding IsPasAssistTorqueVariant}" Value="True">
+							<Setter Property="IsEnabled" Value="False" />
+						</DataTrigger>
+					</Style.Triggers>
+				</Style>
+			</CheckBox.Style>
+		</CheckBox>
 
 	</Grid>
 </UserControl>

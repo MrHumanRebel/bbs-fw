@@ -27,6 +27,9 @@
 #define PAS_SENSOR_NUM_SIGNALS			PAS_PULSES_REVOLUTION
 #define PAS_SENSOR_MIN_PULSE_MS_X10		50	// 500rpm limit
 
+// Require 1 ms of consecutive samples on both edges before accepting a state.
+// The minimum period below alone does not reject short electrical glitches.
+#define SPEED_SENSOR_DEBOUNCE_TICKS		10
 #define SPEED_SENSOR_MIN_PULSE_MS_X10	500
 #define SPEED_SENSOR_TIMEOUT_MS_X10		25000
 
@@ -77,7 +80,8 @@ static uint16_t pas_stop_delay_periods;
 
 static volatile uint16_t speed_ticks_period_length; // pulse length counted in interrupt frequency (100us)
 static uint16_t speed_period_counter;
-static bool speed_prev_state;
+static bool speed_prev_state; // last debounced input state
+static uint8_t speed_state_counter;
 static uint8_t speed_ticks_per_rpm;
 
 
@@ -140,6 +144,7 @@ void sensors_init()
 	speed_period_counter = 0;
 	speed_ticks_period_length = 0;
 	speed_prev_state = false;
+	speed_state_counter = 0;
 	speed_ticks_per_rpm = 1;
 
 	// pins do not have external interrupt, use timer0 to evaluate state frequently
@@ -418,8 +423,22 @@ void sensors_timer0_isr() // runs every 100us, see timers.c
 	// Speed sensor
 	{
 		bool spd = GET_PIN_STATE(PIN_SPEED_SENSOR);
+		bool speed_pulse = false;
 
-		if (spd && !speed_prev_state && speed_period_counter > SPEED_SENSOR_MIN_PULSE_MS_X10)
+		if (spd == speed_prev_state)
+		{
+			speed_state_counter = 0;
+		}
+		else if (++speed_state_counter >= SPEED_SENSOR_DEBOUNCE_TICKS)
+		{
+			// Qualify falling edges too: a brief low glitch while high must
+			// not re-arm the next high sample as a new wheel revolution.
+			speed_prev_state = spd;
+			speed_state_counter = 0;
+			speed_pulse = spd;
+		}
+
+		if (speed_pulse && speed_period_counter > SPEED_SENSOR_MIN_PULSE_MS_X10)
 		{
 			if (speed_period_counter <= SPEED_SENSOR_TIMEOUT_MS_X10)
 			{
@@ -446,7 +465,6 @@ void sensors_timer0_isr() // runs every 100us, see timers.c
 			}
 		}
 
-		speed_prev_state = spd;
 	}
 	
 }

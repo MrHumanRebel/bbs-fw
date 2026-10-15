@@ -9,6 +9,7 @@
 #include "battery.h"
 #include "motor.h"
 #include "system.h"
+#include "memory.h"
 #include "util.h"
 #include "cfgstore.h"
 #include "fwconfig.h"
@@ -18,7 +19,44 @@ static int16_t battery_full_x100v;
 
 static uint8_t battery_percent;
 static uint32_t motor_disabled_at_ms;
-static bool first_reading_done;
+static RAM_BOOL first_reading_done;
+
+// Keep this independent of the SOC estimate, which only updates at idle.
+#define VOLTAGE_FILTER_INTERVAL_MS 125u
+#define VOLTAGE_FILTER_DIVISOR 16
+static int32_t filtered_voltage_x1000;
+static uint32_t last_voltage_sample_ms;
+
+static void update_filtered_voltage()
+{
+	uint16_t voltage_x10 = motor_get_battery_voltage_x10();
+	uint32_t now = system_ms();
+
+	// Zero is the motor interface's unavailable reading. Reject impossible
+	// readings above the configurable 100 V maximum too.
+	if (voltage_x10 == 0 || voltage_x10 > 1000)
+	{
+		filtered_voltage_x1000 = 0;
+		return;
+	}
+
+	int32_t sample_x1000 = (int32_t)voltage_x10 * 100;
+	if (filtered_voltage_x1000 == 0)
+	{
+		filtered_voltage_x1000 = sample_x1000;
+		last_voltage_sample_ms = now;
+	}
+	else if ((uint32_t)(now - last_voltage_sample_ms) >= VOLTAGE_FILTER_INTERVAL_MS)
+	{
+		last_voltage_sample_ms = now;
+		filtered_voltage_x1000 += (sample_x1000 - filtered_voltage_x1000) / VOLTAGE_FILTER_DIVISOR;
+	}
+}
+
+uint16_t battery_get_filtered_voltage_x100()
+{
+	return (uint16_t)(filtered_voltage_x1000 / 10);
+}
 
 /*
 No attempt is made to have accurate battery state of charge display.
@@ -100,6 +138,8 @@ void battery_init()
 	battery_percent = 70;
 	motor_disabled_at_ms = 0;
 	first_reading_done = false;
+	filtered_voltage_x1000 = 0;
+	last_voltage_sample_ms = 0;
 
 	uint16_t battery_min_voltage_x100v = g_config.low_cut_off_v * 100u;
 	uint16_t battery_max_voltage_x100v =
@@ -115,6 +155,8 @@ void battery_init()
 
 void battery_process()
 {
+	update_filtered_voltage();
+
 	if (!first_reading_done)
 	{
 		if (motor_get_battery_voltage_x10() > 0)
