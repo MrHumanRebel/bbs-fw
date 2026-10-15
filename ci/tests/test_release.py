@@ -111,8 +111,7 @@ class PayloadTests(unittest.TestCase):
 
     def test_no_publish_before_all_uploads_verified(self):
         release = {"id": 12, "draft": True, "assets": []}
-        lookup = subprocess.CompletedProcess([], 0, json.dumps(release), "")
-        with patch.object(publish_release.subprocess, "run", return_value=lookup), \
+        with patch.object(publish_release, "find_release", return_value=release), \
              patch.object(publish_release, "gh", side_effect=["", json.dumps(release)]) as gh:
             with self.assertRaises(RuntimeError):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
@@ -122,17 +121,48 @@ class PayloadTests(unittest.TestCase):
         validate(self.directory, "2.0.0")
         release = {"id": 12, "draft": True, "assets": [
             {"name": path.name, "size": path.stat().st_size} for path in self.directory.iterdir()]}
-        lookup = subprocess.CompletedProcess([], 0, json.dumps(release), "")
-        with patch.object(publish_release.subprocess, "run", return_value=lookup), \
+        with patch.object(publish_release, "find_release", return_value=release), \
              patch.object(publish_release, "gh", side_effect=["", json.dumps(release), ""]) as gh:
             publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
             self.assertIn("PATCH", gh.call_args.args)
             self.assertIn("make_latest=legacy", gh.call_args.args)
 
+    def test_new_draft_is_found_without_using_tag_endpoint(self):
+        validate(self.directory, "2.0.0")
+        draft = {"id": 12, "tag_name": "v2.0.0", "draft": True, "assets": []}
+        uploaded = dict(draft, assets=[
+            {"name": p.name, "size": p.stat().st_size} for p in self.directory.iterdir()])
+        def api(*args):
+            if args[:2] == ("api", "repos/MrHumanRebel/bbs-fw/releases"):
+                self.assertEqual(args[2:], ("--paginate", "--slurp"))
+                return json.dumps([[], [draft]]) if created[0] else "[[]]"
+            if args[:2] == ("release", "create"):
+                created[0] = True
+                return ""
+            if args[:2] == ("release", "upload"):
+                return ""
+            if args[:2] == ("api", "repos/MrHumanRebel/bbs-fw/releases/12"):
+                return json.dumps(uploaded)
+            if args[:3] == ("api", "--method", "PATCH"):
+                self.assertEqual(args[3], "repos/MrHumanRebel/bbs-fw/releases/12")
+                return ""
+            self.fail(f"Unexpected command: {args}")
+        # Model GitHub hiding the draft from /releases/tags/:tag entirely.
+        created = [False]
+        with patch.object(publish_release, "gh", side_effect=api):
+            publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+        self.assertTrue(created[0])
+
+    def test_release_listing_failure_does_not_create_or_publish(self):
+        with patch.object(publish_release, "gh", side_effect=subprocess.CalledProcessError(1, ["gh", "api"])) as gh:
+            with self.assertRaises(subprocess.CalledProcessError):
+                publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+            self.assertEqual(gh.call_count, 1)
+
     def test_published_release_rerun_does_not_replace_assets(self):
         validate(self.directory, "2.0.0")
         release = {"id": 12, "draft": False, "assets": [{"name": p.name} for p in self.directory.iterdir()]}
-        with patch.object(publish_release.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(release), "")), \
+        with patch.object(publish_release, "find_release", return_value=release), \
              patch.object(publish_release, "gh") as gh:
             publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
             gh.assert_not_called()
