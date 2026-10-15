@@ -12,6 +12,14 @@ def gh(*args):
     return subprocess.check_output(["gh", *args], text=True)
 
 
+def find_release(repository, tag):
+    # The tag endpoint does not reliably expose unpublished drafts. The
+    # authenticated list includes them; paginate so old drafts can be resumed.
+    pages = json.loads(gh("api", f"repos/{repository}/releases", "--paginate", "--slurp"))
+    return next((release for page in pages for release in page
+                 if release["tag_name"] == tag), None)
+
+
 def publish(tag, directory, repository, expected_commit=None):
     validate(directory, tag.removeprefix("v"))
     if expected_commit:
@@ -19,10 +27,8 @@ def publish(tag, directory, repository, expected_commit=None):
         if tagged_commit != expected_commit:
             raise RuntimeError("Release tag no longer points to the commit that was built")
     assets = sorted(path for path in directory.iterdir() if path.is_file())
-    endpoint = f"repos/{repository}/releases/tags/{tag}"
-    lookup = subprocess.run(["gh", "api", endpoint], text=True, capture_output=True)
-    if lookup.returncode == 0:
-        release = json.loads(lookup.stdout)
+    release = find_release(repository, tag)
+    if release is not None:
         existing_names = {asset["name"] for asset in release["assets"]}
         if not release["draft"]:
             if not {asset.name for asset in assets} <= existing_names:
@@ -30,8 +36,6 @@ def publish(tag, directory, repository, expected_commit=None):
             print(f"{tag} is already published with all assets; nothing to change")
             return
     else:
-        if "404" not in lookup.stderr:
-            raise RuntimeError(f"Cannot inspect release: {lookup.stderr}")
         notes = (
             "Firmware downloads: select the HEX matching your controller (BBS02, BBSHD, or TSDZ2).\n\n"
             "The Windows x64 EXE is self-contained; no separate .NET installation is required.\n\n"
@@ -39,7 +43,10 @@ def publish(tag, directory, repository, expected_commit=None):
         )
         gh("release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
            "--title", f"BBS-FW {tag}", "--notes", notes, "--generate-notes")
-        release = json.loads(gh("api", endpoint))
+        release = find_release(repository, tag)
+        if release is None:
+            raise RuntimeError("Created draft release could not be found; refusing to publish")
+    endpoint = f"repos/{repository}/releases/{release['id']}"
     gh("release", "upload", tag, "--repo", repository, "--clobber", *map(str, assets))
     uploaded = json.loads(gh("api", endpoint))
     by_name = {asset["name"]: asset for asset in uploaded["assets"]}
