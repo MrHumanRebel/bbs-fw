@@ -9,6 +9,7 @@
 #include "throttle.h"
 #include "intellisense.h"
 #include "system.h"
+#include "memory.h"
 #include "eventlog.h"
 #include "util.h"
 #include "adc.h"
@@ -19,9 +20,9 @@
 static uint8_t min_voltage_adc;
 static uint8_t max_voltage_adc;
 
-static bool throttle_detected;
-static bool throttle_low_ok;
-static bool throttle_hard_ok;
+static RAM_BOOL throttle_detected;
+static RAM_BOOL throttle_low_ok;
+static RAM_BOOL throttle_hard_ok;
 static uint32_t throttle_hard_limit_hit_at;
 
 

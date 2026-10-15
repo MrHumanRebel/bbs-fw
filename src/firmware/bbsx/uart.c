@@ -7,6 +7,7 @@
  */
 
 #include "uart.h"
+#include "memory.h"
 #include "system.h"
 #include "watchdog.h"
 #include "bbsx/stc15.h"
@@ -31,7 +32,7 @@ static volatile __data uint8_t rx1_tail;
 static volatile uint8_t rx1_buf[RX1_BUFFER_SIZE];
 static volatile __data uint8_t tx1_head;
 static volatile __data uint8_t tx1_tail;
-static volatile __data uint8_t tx1_sending;
+static volatile RAM_BOOL tx1_sending;
 static volatile uint8_t tx1_buf[TX1_BUFFER_SIZE];
 
 // UART2 (motor)
@@ -46,7 +47,7 @@ static volatile __data uint8_t rx2_tail;
 static volatile uint8_t rx2_buf[RX2_BUFFER_SIZE];
 static volatile __data uint8_t tx2_head;
 static volatile __data uint8_t tx2_tail;
-static volatile __data uint8_t tx2_sending;
+static volatile RAM_BOOL tx2_sending;
 static volatile uint8_t tx2_buf[TX2_BUFFER_SIZE];
 
 

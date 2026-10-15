@@ -21,6 +21,15 @@ MAINSRC = main.c
 SUBDIRS = 
 		
 CFLAGS = -Ddouble=float --std-c99 -D$(TARGET_CONTROLLER)
+
+# Release builds pass the reserved tag version; defaults in version.h are 2.0.0.
+ifneq ($(VERSION),)
+VERSION_PARTS := $(subst ., ,$(VERSION))
+ifneq ($(words $(VERSION_PARTS)),3)
+$(error VERSION must be MAJOR.MINOR.PATCH)
+endif
+CFLAGS += -DVERSION_MAJOR=$(word 1,$(VERSION_PARTS)) -DVERSION_MINOR=$(word 2,$(VERSION_PARTS)) -DVERSION_PATCH=$(word 3,$(VERSION_PARTS))
+endif
 	
 # Target Specific
 ifeq ($(TARGET_CONTROLLER), BBSHD)

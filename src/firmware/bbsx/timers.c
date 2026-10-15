@@ -1,4 +1,5 @@
 #include "timers.h"
+#include "memory.h"
 #include "bbsx/timers.h"
 #include "bbsx/interrupt.h"
 #include "bbsx/cpu.h"
@@ -11,8 +12,8 @@
 extern void system_timer0_isr();
 extern void sensors_timer0_isr();
 
-static bool timer0_system_ready;
-static bool timer0_sensors_ready;
+static RAM_BOOL timer0_system_ready;
+static RAM_BOOL timer0_sensors_ready;
 
 static void timer0_init()
 {

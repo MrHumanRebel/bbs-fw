@@ -10,10 +10,12 @@
 #include "fwconfig.h"
 #include "cfgstore.h"
 #include "motor.h"
+#include "battery.h"
 #include "sensors.h"
 #include "throttle.h"
 #include "lights.h"
 #include "uart.h"
+#include "memory.h"
 #include "eventlog.h"
 #include "util.h"
 #include "system.h"
@@ -53,18 +55,71 @@ static uint16_t high_voltage_pad_x100;
 static assist_level_data_t assist_level_data;
 static uint16_t speed_limit_ramp_interval_rpm_x10;
 
-static bool cruise_paused;
+static RAM_BOOL cruise_paused;
 static int8_t temperature_contr_c;
 static int8_t temperature_motor_c;
 
 static uint16_t ramp_up_current_interval_ms;
-static uint32_t power_blocked_until_ms;
+static uint32_t power_block_started_ms;
+static uint16_t power_block_duration_ms;
+static RAM_BOOL pas_blocked_after_walk;
 
 static uint16_t pretension_cutoff_speed_rpm_x10;
 
-static bool lights_state = false;
+void block_power_for(uint16_t ms);
+
+static RAM_BOOL lights_state = false;
+static RAM_BOOL virtual_active;
+static uint8_t virtual_throttle;
+static uint32_t virtual_last_command_ms;
+
+static void stop_virtual_control()
+{
+	virtual_active = false;
+	virtual_throttle = 0;
+	app_set_assist_level(ASSIST_0);
+	pas_blocked_after_walk = true;
+	block_power_for(1000);
+}
+
+bool app_virtual_control(uint8_t enable, uint8_t level, uint8_t throttle)
+{
+	// UART requests must not renew an already expired positive demand.
+	if (virtual_active && (uint32_t)(system_ms() - virtual_last_command_ms) >= 1500)
+	{
+		stop_virtual_control();
+	}
+	if (enable > 1 || level > ASSIST_9 || throttle > 100 ||
+		(enable && !virtual_active && throttle != 0))
+	{
+		return false;
+	}
+	if (!enable)
+	{
+		stop_virtual_control();
+		return true;
+	}
+	// Releasing virtual throttle must not hand motor-driven pedal pulses
+	// straight to PAS and keep the motor running.
+	if (virtual_active && virtual_throttle > 0 && throttle == 0)
+	{
+		pas_blocked_after_walk = true;
+		block_power_for(1000);
+	}
+	virtual_active = true;
+	virtual_throttle = throttle;
+	virtual_last_command_ms = system_ms();
+	app_set_assist_level(level);
+	return true;
+}
+
+uint8_t app_virtual_throttle()
+{
+	return virtual_active ? virtual_throttle : 0;
+}
 
 void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent);
+uint8_t compensate_pas_current(uint8_t current);
 #if HAS_TORQUE_SENSOR
 void apply_pas_torque(uint8_t* target_current);
 #endif
@@ -113,7 +168,11 @@ void app_init()
 	temperature_motor_c = 0;
 
 	ramp_up_current_interval_ms = (g_config.max_current_amps * 10u) / g_config.current_ramp_amps_s;
-	power_blocked_until_ms = 0;
+	power_block_started_ms = 0;
+	power_block_duration_ms = 0;
+	pas_blocked_after_walk = false;
+	virtual_active = false;
+	virtual_throttle = 0;
 
 	speed_limit_ramp_interval_rpm_x10 = convert_wheel_speed_kph_to_rpm(SPEED_LIMIT_RAMP_DOWN_INTERVAL_KPH) * 10;
 
@@ -134,16 +193,29 @@ void app_init()
 
 void app_process()
 {
+	if (virtual_active && (uint32_t)(system_ms() - virtual_last_command_ms) >= 1500)
+	{
+		app_virtual_control(0, 0, 0);
+	}
 	uint8_t target_current = 0;
 	uint8_t target_cadence = assist_level_data.level.max_cadence_percent;
-	uint8_t throttle_percent = throttle_map_response(throttle_read());
+	uint8_t throttle_percent = throttle_map_response(virtual_active ? virtual_throttle : throttle_read());
 
 	bool pas_engaged = false;
 	bool throttle_override = false;
 
-	if (check_power_block())
+	// A timer alone cannot distinguish rider input from pedals driven by
+	// walk assist. Require an observed pedal stop before accepting PAS again.
+	if (pas_blocked_after_walk && !pas_is_pedaling_forwards() && !pas_is_pedaling_backwards())
+	{
+		pas_blocked_after_walk = false;
+	}
+
+	bool power_blocked = check_power_block();
+	if (power_blocked)
 	{
 		target_current = 0;
+		target_cadence = 0;
 	}
 	else if (assist_level == ASSIST_PUSH && g_config.use_push_walk)
 	{
@@ -151,11 +223,14 @@ void app_process()
 	}
 	else
 	{
-		apply_pretension(&target_current);
-		apply_pas_cadence(&target_current, throttle_percent);
+		if (!pas_blocked_after_walk)
+		{
+			apply_pretension(&target_current);
+			apply_pas_cadence(&target_current, throttle_percent);
 #if HAS_TORQUE_SENSOR
-		apply_pas_torque(&target_current);
+			apply_pas_torque(&target_current);
 #endif // HAS_TORQUE_SENSOR
+		}
 
 		pas_engaged = target_current > 0;
 
@@ -185,7 +260,8 @@ void app_process()
 	bool is_braking = apply_brake(&target_current);
 
 	apply_current_ramp_up(&target_current, is_limiting || !throttle_override);
-	apply_current_ramp_down(&target_current, !is_braking && !shift_limiting);
+	// Safety requests must not be raised again by the normal ramp-down.
+	apply_current_ramp_down(&target_current, !is_braking && !shift_limiting && !power_blocked && !speed_limiting);
 
 	motor_set_target_speed(target_cadence);
 	motor_set_target_current(target_current);
@@ -216,9 +292,9 @@ void app_set_assist_level(uint8_t level)
 	{
 		if (assist_level == ASSIST_PUSH && g_config.use_push_walk)
 		{
-			// When releasig push walk mode pedals may have been rotating
-			// with the motor, block motor power for 2 seconds to prevent PAS
-			// sensor from incorrectly applying power if returning to a PAS level.
+			// Stop walk output immediately, then retain the existing one-second
+			// power block. PAS must also see the pedals stop before re-arming.
+			pas_blocked_after_walk = true;
 			block_power_for(1000);
 		}
 
@@ -376,6 +452,29 @@ void apply_pretension(uint8_t* target_current)
 	return;
 }
 
+uint8_t compensate_pas_current(uint8_t current)
+{
+	if (!(assist_level_data.level.flags & ASSIST_FLAG_VOLTAGE_COMPENSATION) || current == 0)
+	{
+		return current;
+	}
+
+	uint16_t full_voltage_x100 = EXPAND_U16(g_config.max_battery_x100v_u16h, g_config.max_battery_x100v_u16l);
+	uint16_t voltage_x100 = battery_get_filtered_voltage_x100();
+	uint16_t cutoff_x100 = (uint16_t)g_config.low_cut_off_v * 100u;
+
+	// No boost with unavailable readings or an invalid battery configuration.
+	if (cutoff_x100 == 0 || full_voltage_x100 > 10000 || voltage_x100 <= cutoff_x100 ||
+		full_voltage_x100 <= cutoff_x100 || voltage_x100 >= full_voltage_x100)
+	{
+		return current;
+	}
+
+	uint32_t compensated = ((uint32_t)current * full_voltage_x100) / voltage_x100;
+	uint8_t limit = MIN(assist_level_data.level.target_current_percent, 100);
+	return (uint8_t)MIN(compensated, limit);
+}
+
 void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent)
 {
 	if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && !(assist_level_data.level.flags & ASSIST_FLAG_PAS_TORQUE))
@@ -415,6 +514,11 @@ void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent)
 					}
 				}
 			}
+
+			// Compensate only an active cadence/variable PAS request, before
+			// throttle selection and all safety limits. Torque PAS already
+			// calculates current from power and voltage.
+			*target_current = compensate_pas_current(*target_current);
 		}
 	}
 }
@@ -473,7 +577,7 @@ void apply_pas_torque(uint8_t* target_current)
 
 void apply_cruise(uint8_t* target_current, uint8_t throttle_percent)
 {
-	static bool cruise_block_throttle_return = false;
+	static RAM_BOOL cruise_block_throttle_return = false;
 
 	if ((assist_level_data.level.flags & ASSIST_FLAG_CRUISE) && throttle_ok())
 	{
@@ -499,7 +603,7 @@ void apply_cruise(uint8_t* target_current, uint8_t throttle_percent)
 		}
 
 		// unpause cruise if pedaling forward while engaging throttle > 50%
-		else if (cruise_paused && !cruise_block_throttle_return && throttle_percent > 50 && pas_is_pedaling_forwards() && pas_get_pulse_counter() > CRUISE_ENGAGE_PAS_PULSES)
+		else if (cruise_paused && !pas_blocked_after_walk && !cruise_block_throttle_return && throttle_percent > 50 && pas_is_pedaling_forwards() && pas_get_pulse_counter() > CRUISE_ENGAGE_PAS_PULSES)
 		{
 			cruise_paused = false;
 			cruise_block_throttle_return = true;
@@ -544,7 +648,7 @@ bool apply_throttle(uint8_t* target_current, uint8_t throttle_percent)
 
 bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool pas_engaged, bool throttle_override)
 {
-	static bool speed_limiting = false;
+	static RAM_BOOL speed_limiting = false;
 
 	if (!g_config.use_speed_sensor)
 	{
@@ -582,12 +686,14 @@ bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool p
 		max_speed_rpm_x10 = assist_level_data.max_wheel_speed_rpm_x10;
 	}
 
-	int32_t max_speed_ramp_low_rpm_x10 = max_speed_rpm_x10 - speed_limit_ramp_interval_rpm_x10;
-	int32_t max_speed_ramp_high_rpm_x10 = max_speed_rpm_x10 + speed_limit_ramp_interval_rpm_x10;
+	// Finish the ramp at the configured limit, not above it. At low
+	// limits, use at most half the limit so useful starting torque remains.
+	int32_t ramp_width_rpm_x10 = MIN(speed_limit_ramp_interval_rpm_x10, max_speed_rpm_x10 / 2);
+	int32_t max_speed_ramp_low_rpm_x10 = max_speed_rpm_x10 - ramp_width_rpm_x10;
 
 	if (max_speed_rpm_x10 > 0)
 	{
-		int16_t current_speed_rpm_x10 = speed_sensor_get_rpm_x10();
+		uint16_t current_speed_rpm_x10 = speed_sensor_get_rpm_x10();
 
 		if (current_speed_rpm_x10 < max_speed_ramp_low_rpm_x10)
 		{
@@ -606,18 +712,17 @@ bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool p
 				eventlog_write_data(EVT_DATA_SPEED_LIMITING, 1);
 			}
 
-			if (current_speed_rpm_x10 > max_speed_ramp_high_rpm_x10)
+			if (current_speed_rpm_x10 >= max_speed_rpm_x10)
 			{
-				if (*target_current > 1)
-				{
-					*target_current = 1;
-					return true;
-				}
+				*target_current = 0;
+				// Report limiting even for a zero input so an earlier current
+				// cannot be restored by the normal ramp-down state.
+				return true;
 			}
 			else
 			{
 				// linear ramp down when approaching max speed.
-				uint8_t tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_ramp_high_rpm_x10, *target_current, 1);
+				uint8_t tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_rpm_x10, *target_current, 0);
 				if (*target_current > tmp)
 				{
 					*target_current = tmp;
@@ -634,7 +739,7 @@ bool apply_thermal_limit(uint8_t* target_current)
 {
 	static uint32_t next_log_temp_ms = 10000;
 
-	static bool temperature_limiting = false;
+	static RAM_BOOL temperature_limiting = false;
 
 	int16_t temp_contr_x100 = temperature_contr_x100();
 	temperature_contr_c = temp_contr_x100 / 100;
@@ -693,7 +798,7 @@ bool apply_thermal_limit(uint8_t* target_current)
 bool apply_low_voltage_limit(uint8_t* target_current)
 {
 	static uint32_t next_log_volt_ms = 10000;
-	static bool lvc_limiting = false;
+	static RAM_BOOL lvc_limiting = false;
 
 	static uint32_t next_voltage_reading_ms = 125;
 	static int32_t flt_min_bat_volt_x100 = 100 * 100;
@@ -754,9 +859,9 @@ bool apply_low_voltage_limit(uint8_t* target_current)
 bool apply_shift_sensor_interrupt(uint8_t* target_current)
 {
 	static uint32_t shift_sensor_act_ms = 0;
-	static bool shift_sensor_last = false;
-	static bool shift_sensor_interrupting = false;
-	static bool shift_sensor_logged = false;
+	static RAM_BOOL shift_sensor_last = false;
+	static RAM_BOOL shift_sensor_interrupting = false;
+	static RAM_BOOL shift_sensor_logged = false;
 
 	// Exit immediately if shift interrupts disabled.
 	if (!g_config.use_shift_sensor)
@@ -923,12 +1028,12 @@ void apply_current_ramp_down(uint8_t* target_current, bool enable)
 
 bool check_power_block()
 {
-	if (power_blocked_until_ms != 0)
+	if (power_block_duration_ms != 0)
 	{
-		// power block is active, check if time to release
-		if (system_ms() > power_blocked_until_ms)
+		// Elapsed-time subtraction remains valid across system clock wrap.
+		if ((uint32_t)(system_ms() - power_block_started_ms) >= power_block_duration_ms)
 		{
-			power_blocked_until_ms = 0;
+			power_block_duration_ms = 0;
 			return false;
 		}
 
@@ -940,8 +1045,10 @@ bool check_power_block()
 
 void block_power_for(uint16_t ms)
 {
-	power_blocked_until_ms = system_ms() + ms;
+	power_block_started_ms = system_ms();
+	power_block_duration_ms = ms;
 }
+
 
 void reload_assist_params()
 {

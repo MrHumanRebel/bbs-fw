@@ -58,6 +58,10 @@ void app_init();
 
 void app_process();
 
+// Volatile bench controls; positive throttle requires a prior zero command.
+bool app_virtual_control(uint8_t enable, uint8_t level, uint8_t throttle);
+uint8_t app_virtual_throttle();
+
 void app_set_assist_level(uint8_t level);
 void app_set_lights(bool on);
 

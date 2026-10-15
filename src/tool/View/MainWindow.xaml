@@ -51,6 +51,9 @@
 			<TabItem Header="Connection">
 				<vw:ConnectionView Margin="10" DataContext="{Binding ConnectionVm}" />
 			</TabItem>
+			<TabItem Header="Virtual Display">
+                <vw:VirtualDisplayView Margin="10" DataContext="{Binding VirtualDisplayVm}" />
+            </TabItem>
 			<TabItem Header="System">
 				<vw:SystemView Margin="10" />
 			</TabItem>

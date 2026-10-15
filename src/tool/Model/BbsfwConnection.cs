@@ -54,6 +54,69 @@ namespace BBSFW.Model
 		private const int Discard = -1;
 
 		private SerialPort _port = null;
+        private readonly SemaphoreSlim _virtualRequestLock = new SemaphoreSlim(1, 1);
+        private TaskCompletionSource<VirtualTelemetry> _telemetryResponse;
+        private TaskCompletionSource<bool> _virtualResponse;
+        private byte _virtualSequence;
+
+        public async Task<VirtualTelemetry> ReadVirtualTelemetry()
+        {
+            await _virtualRequestLock.WaitAsync();
+            try
+            {
+                if (!IsConnected) return null;
+                var completion = new TaskCompletionSource<VirtualTelemetry>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _telemetryResponse = completion;
+                SendReadRequest(4);
+                if (await Task.WhenAny(completion.Task, Task.Delay(1000)) != completion.Task) return null;
+                return await completion.Task;
+            }
+            finally { _telemetryResponse = null; _virtualRequestLock.Release(); }
+        }
+
+        public async Task<bool> SendVirtualControl(bool enabled, byte level, byte throttle)
+        {
+            await _virtualRequestLock.WaitAsync();
+            try
+            {
+                if (!IsConnected || level > 9 || throttle > 100) return false;
+                var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _virtualResponse = completion;
+                if (++_virtualSequence == 0) ++_virtualSequence;
+                byte[] frame = {2, 0xf4, _virtualSequence, (byte)(enabled ? 1 : 0), level, throttle, 0};
+                frame[6] = (byte)frame.Take(6).Sum(x => x);
+                lock (_port) _port.Write(frame, 0, frame.Length);
+                if (await Task.WhenAny(completion.Task, Task.Delay(600)) != completion.Task) return false;
+                return await completion.Task;
+            }
+            finally { _virtualResponse = null; _virtualRequestLock.Release(); }
+        }
+
+        // Sequence zero is reserved for unawaited safety releases.
+        public void ReleaseVirtualControl(bool stop, byte level)
+        {
+            if (!IsConnected) return;
+            byte[] frame = {2, 0xf4, 0, (byte)(stop ? 0 : 1), level, 0, 0};
+            frame[6] = (byte)frame.Take(6).Sum(x => x);
+            lock (_port) _port.Write(frame, 0, frame.Length);
+        }
+
+        private int ProcessVirtualTelemetry()
+        {
+            if (_rxBuffer.Count < 15) return Keep;
+            var telemetry = VirtualTelemetry.Decode(_rxBuffer.Take(15).ToArray());
+            if (telemetry == null) return Discard;
+            _telemetryResponse?.TrySetResult(telemetry);
+            return 15;
+        }
+
+        private int ProcessVirtualAck()
+        {
+            if (_rxBuffer.Count < 5) return Keep;
+            if ((byte)_rxBuffer.Take(4).Sum(x => x) != _rxBuffer[4]) return Discard;
+            if (_rxBuffer[2] == _virtualSequence) _virtualResponse?.TrySetResult(_rxBuffer[3] == 1);
+            return 5;
+        }
 		private volatile bool _isConnecting = false;
 		private volatile bool _isConnected = false;
 		private Controller _controllerType = Controller.Unknown;
@@ -291,6 +354,7 @@ namespace BBSFW.Model
 
 			switch(_rxBuffer[1])
 			{
+			case 4: return ProcessVirtualTelemetry();
 			case OPCODE_READ_FW_VERSION:
 				return ProcessReadResponseFwVersion();
 			case OPCODE_READ_EVTLOG_ENABLE:
@@ -433,6 +497,7 @@ namespace BBSFW.Model
 
 			switch (_rxBuffer[1])
 			{
+				case 0xf4: return ProcessVirtualAck();
 				case OPCODE_WRITE_EVTLOG_ENABLE:
 					return ProcessWriteResponseEvtlogEnable();
 				case OPCODE_WRITE_CONFIG:
@@ -558,7 +623,7 @@ namespace BBSFW.Model
 			buf.Add(opcode);
 			buf.Add(ComputeChecksum(buf, buf.Count));
 
-			_port.Write(buf.ToArray(), 0, buf.Count);
+			lock (_port) _port.Write(buf.ToArray(), 0, buf.Count);
 		}
 
 		private void SendEventLogEnableRequest(bool enable)
@@ -569,7 +634,7 @@ namespace BBSFW.Model
 			buf.Add((byte)(enable ? 1 : 0));
 			buf.Add(ComputeChecksum(buf, buf.Count));
 
-			_port.Write(buf.ToArray(), 0, buf.Count);
+			lock (_port) _port.Write(buf.ToArray(), 0, buf.Count);
 		}
 
 		private void SendWriteConfigRequest(Configuration config)
@@ -589,7 +654,7 @@ namespace BBSFW.Model
 			buf.AddRange(cfgarr);
 			buf.Add(ComputeChecksum(buf, buf.Count));
 
-			_port.Write(buf.ToArray(), 0, buf.Count);
+			lock (_port) _port.Write(buf.ToArray(), 0, buf.Count);
 		}
 
 		private void SendWriteResetConfigRequest()
@@ -599,7 +664,7 @@ namespace BBSFW.Model
 			buf.Add(OPCODE_WRITE_RESET_CONFIG);
 			buf.Add(ComputeChecksum(buf, buf.Count));
 
-			_port.Write(buf.ToArray(), 0, buf.Count);
+			lock (_port) _port.Write(buf.ToArray(), 0, buf.Count);
 		}
 
 		private void SendWriteVoltageCalibration(float volts)
@@ -613,7 +678,7 @@ namespace BBSFW.Model
 			buf.Add((byte)volts_x100);
 			buf.Add(ComputeChecksum(buf, buf.Count));
 
-			_port.Write(buf.ToArray(), 0, buf.Count);
+			lock (_port) _port.Write(buf.ToArray(), 0, buf.Count);
 		}
 
 		private bool SetupConnection(TimeSpan timeout)

@@ -85,10 +85,10 @@
 // Motor current is ramped down linearly until this value when approaching "empty".
 #define LVC_LOW_CURRENT_PERCENT					20
 
-// Size of speed limit ramp down interval.
-// If max speed is 50 and this is set to 3 then the
-// target current will start ramping down when passing 47
-// and be at 50% of assist target current when reaching 50.
+// Width of the current ramp below the configured speed limit.
+// With a 50 km/h limit and width 3, ramp from full current at 47
+// to zero at 50 km/h. Width is capped at half the limit for low speeds.
+// Zero width gives a hard cutoff at the limit.
 #define SPEED_LIMIT_RAMP_DOWN_INTERVAL_KPH		3
 
 // Current ramp down (e.g. when releasing throttle, stop pedaling etc.) in percent per 10 millisecond.

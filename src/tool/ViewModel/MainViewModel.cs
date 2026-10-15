@@ -24,6 +24,8 @@ namespace BBSFW.ViewModel
 
 		public EventLogViewModel EventLogVm { get; private set; }
 
+        public VirtualDisplayViewModel VirtualDisplayVm { get; private set; }
+
 
 
 		public ICommand OpenConfigCommand
@@ -77,6 +79,7 @@ namespace BBSFW.ViewModel
 			AssistLevelsVm = new AssistLevelsViewModel(ConfigVm);
 			CalibrationVm = new CalibrationViewModel(ConnectionVm);
 			EventLogVm = new EventLogViewModel();
+            VirtualDisplayVm = new VirtualDisplayViewModel(ConnectionVm, ConfigVm);
 
 
 			ConnectionVm.EventLogReceived += EventLogVm.AddEvent;
@@ -154,6 +157,7 @@ namespace BBSFW.ViewModel
 
 		private async void OnReadFlash()
 		{
+            await VirtualDisplayVm.Stop();
 			if (!ConnectionVm.IsConnected)
 			{
 				return;
@@ -177,6 +181,7 @@ namespace BBSFW.ViewModel
 
 		private async void OnWriteFlash()
 		{
+            await VirtualDisplayVm.Stop();
 			if (!ConnectionVm.IsConnected)
 			{
 				return;
@@ -212,6 +217,7 @@ namespace BBSFW.ViewModel
 
 		private async void OnResetFlash()
 		{
+            await VirtualDisplayVm.Stop();
 			if (!ConnectionVm.IsConnected)
 			{
 				return;
@@ -242,8 +248,9 @@ namespace BBSFW.ViewModel
 			MessageBox.Show($"Version: {version.Major}.{version.Minor}.{version.Build}\nAuthor: Daniel Nilsson", "BBS-FW Tool", MessageBoxButton.OK, MessageBoxImage.Information);
 		}
 
-		private void OnExit()
+		private async void OnExit()
 		{
+            await VirtualDisplayVm.Stop();
 			Application.Current.Shutdown();
 		}
 
