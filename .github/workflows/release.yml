@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Release automation tests
         run: python3 -m unittest discover -s ci/tests -v
       - name: Firmware host regression tests
@@ -87,8 +87,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: 8.0.x
-      - name: Publish standalone Windows x64 tool
+          dotnet-version: 10.0.x
+      - name: Publish standalone and compact Windows x64 tools
         shell: pwsh
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -100,6 +100,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item publish/BBSFWTool.exe "dist/BBSFWTool-v${env:VERSION}-win-x64.exe"
+          dotnet publish src/tool/bbs-fw-tool.csproj -c Release -r win-x64 --self-contained false `
+            -p:Version=$env:VERSION -p:AssemblyVersion="${env:VERSION}.0" -p:FileVersion="${env:VERSION}.0" `
+            -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:EnableCompressionInSingleFile=false `
+            -p:DebugType=None -p:DebugSymbols=false -o publish-compact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item publish-compact/BBSFWTool.exe "dist/BBSFWTool-v${env:VERSION}-win-x64-compact.exe"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-tool

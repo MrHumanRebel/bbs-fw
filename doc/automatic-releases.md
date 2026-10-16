@@ -36,14 +36,18 @@ manual Windows publish, as shown in the workflow.
 2. Reserve/reuse the tag for that commit.
 3. Build BBS02, BBSHD and TSDZ2 independently in Debian 13 with SDCC
    `4.5.0+dfsg-1`. Each target has a clean build and HEX validation.
-4. Build the Windows x64 tool on `windows-2022`, using .NET SDK 8 to publish the
-   existing .NET 6 Windows project as a **self-contained single-file EXE**.
-   Downloaders need no separately installed .NET runtime. Native libraries may
-   be extracted automatically by the single-file host at application startup.
+4. Build the Windows x64 tool on `windows-2022`, using .NET 10 SDK to publish the
+   .NET 10 LTS Windows project in two single-file variants: **standalone**
+   (compressed, runtime included) and **compact** (framework-dependent, requires
+   .NET 10 Desktop Runtime x64). Both retain the same application functionality.
+   Native libraries may be extracted by the single-file host at startup.
 5. Download all four build artifacts, validate every HEX checksum and the
-   Windows x64 PE header, and generate `SHA256SUMS`.
+   Windows x64 PE headers, and generate `SHA256SUMS`.
 6. Create/resume a draft GitHub Release and upload all assets. Verify uploaded
    filenames/sizes and check that the tag still references the built commit.
+   New drafts use the creation API response directly; all asset uploads,
+   replacement of interrupted uploads, verification and publication use release
+   IDs rather than tag-based rediscovery.
    Only then publish the complete release with generated change notes. GitHub's
    normal version/date rules determine the latest release.
 
@@ -52,7 +56,8 @@ For v2.0.0 the public Release contains:
 - `bbs-fw-v2.0.0-BBS02.hex`
 - `bbs-fw-v2.0.0-BBSHD.hex`
 - `bbs-fw-v2.0.0-TSDZ2.hex`
-- `BBSFWTool-v2.0.0-win-x64.exe`
+- `BBSFWTool-v2.0.0-win-x64.exe` (standalone)
+- `BBSFWTool-v2.0.0-win-x64-compact.exe` (runtime required)
 - `SHA256SUMS`
 
 Build artifacts are also downloadable from their Actions run. Always choose

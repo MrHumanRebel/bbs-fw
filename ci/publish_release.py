@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from urllib.parse import urlencode
 
 from validate_release import validate
 
@@ -22,10 +23,9 @@ def find_release(repository, tag):
 
 def publish(tag, directory, repository, expected_commit=None):
     validate(directory, tag.removeprefix("v"))
-    if expected_commit:
-        tagged_commit = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha").strip()
-        if tagged_commit != expected_commit:
-            raise RuntimeError("Release tag no longer points to the commit that was built")
+    tagged_commit = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha").strip()
+    if expected_commit and tagged_commit != expected_commit:
+        raise RuntimeError("Release tag no longer points to the commit that was built")
     assets = sorted(path for path in directory.iterdir() if path.is_file())
     release = find_release(repository, tag)
     if release is not None:
@@ -38,16 +38,28 @@ def publish(tag, directory, repository, expected_commit=None):
     else:
         notes = (
             "Firmware downloads: select the HEX matching your controller (BBS02, BBSHD, or TSDZ2).\n\n"
-            "The Windows x64 EXE is self-contained; no separate .NET installation is required.\n\n"
+            "Windows: the compact EXE requires the .NET 10 Desktop Runtime (x64). "
+            "The other EXE is standalone and includes the runtime. Both have identical features.\n\n"
+            "Runtime download: https://dotnet.microsoft.com/download/dotnet/10.0\n\n"
             "SHA256SUMS contains download checksums. This automated build is not on-device certification."
         )
-        gh("release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
-           "--title", f"BBS-FW {tag}", "--notes", notes, "--generate-notes")
-        release = find_release(repository, tag)
-        if release is None:
-            raise RuntimeError("Created draft release could not be found; refusing to publish")
+        # Use the POST response directly: a new draft may not yet appear in
+        # list/tag lookups. Every subsequent operation uses its immutable ID.
+        release = json.loads(gh("api", "--method", "POST", f"repos/{repository}/releases",
+                                "-f", f"tag_name={tag}", "-f", f"name=BBS-FW {tag}",
+                                "-f", f"body={notes}", "-F", "draft=true",
+                                "-F", "generate_release_notes=true"))
+    if release.get("tag_name") != tag or not release.get("draft") or not release.get("id"):
+        raise RuntimeError("Unexpected draft release response; refusing to upload")
     endpoint = f"repos/{repository}/releases/{release['id']}"
-    gh("release", "upload", tag, "--repo", repository, "--clobber", *map(str, assets))
+    upload_endpoint = release["upload_url"].split("{", 1)[0]
+    for asset in assets:
+        # Resume interrupted uploads by replacing only assets on this draft.
+        for previous in release["assets"]:
+            if previous["name"] == asset.name:
+                gh("api", "--method", "DELETE", f"repos/{repository}/releases/assets/{previous['id']}")
+        gh("api", "--method", "POST", upload_endpoint + "?" + urlencode({"name": asset.name}),
+           "-H", "Content-Type: application/octet-stream", "--input", str(asset))
     uploaded = json.loads(gh("api", endpoint))
     by_name = {asset["name"]: asset for asset in uploaded["assets"]}
     for asset in assets:

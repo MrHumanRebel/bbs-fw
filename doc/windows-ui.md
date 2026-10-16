@@ -22,8 +22,12 @@ configuration formats, telemetry and virtual-throttle handlers are retained.
 
 ## Distribution size
 
-Single-file compression is enabled and ReadyToRun is disabled. Release builds
-still contain the .NET runtime and work without a separately installed runtime.
+Single-file compression is enabled and ReadyToRun is disabled. The standalone release
+contains the .NET runtime and works without a separately installed runtime.
+The compact release uses the same code and UI but omits the runtime; install
+the .NET 10 Desktop Runtime (x64) once to use it. Single-file compression is
+disabled for compact builds because .NET only supports it for self-contained
+bundles.
 The release workflow inherits the compression setting from the project.
 The local Windows x64 publish decreased from approximately 148 MiB to 66 MiB.
 Compression trades some launch/extraction work for a smaller download; it does
