@@ -99,6 +99,7 @@ make -C src/firmware -j1 all TARGET_CONTROLLER=BBSHD
 
 Replace `BBSHD` with `BBS02` or `TSDZ2` as needed. The output is `src/firmware/bbs-fw.hex`; clean between target builds to avoid mixing object files.
 
+Install the .NET 10 SDK to build the Windows tool and run configuration tests.
 Run the firmware regression tests and .NET configuration tests:
 
 ```bash

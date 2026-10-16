@@ -36,8 +36,8 @@ manual Windows publish, as shown in the workflow.
 2. Reserve/reuse the tag for that commit.
 3. Build BBS02, BBSHD and TSDZ2 independently in Debian 13 with SDCC
    `4.5.0+dfsg-1`. Each target has a clean build and HEX validation.
-4. Build the Windows x64 tool on `windows-2022`, using .NET SDK 8 to publish the
-   existing .NET 6 Windows project as a **self-contained single-file EXE**.
+4. Build the Windows x64 tool on `windows-2022`, using .NET 10 SDK to publish the
+   .NET 10 LTS Windows project as a **self-contained single-file EXE**.
    Downloaders need no separately installed .NET runtime. Native libraries may
    be extracted automatically by the single-file host at application startup.
 5. Download all four build artifacts, validate every HEX checksum and the

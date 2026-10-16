@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
 	<PublishSingleFile>true</PublishSingleFile>
 	<SelfContained>false</SelfContained>
 	<PublishReadyToRun>false</PublishReadyToRun>
@@ -19,8 +19,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.IO.Ports" Version="5.0.0" />
-    <PackageReference Include="System.Management" Version="5.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.13" />
+    <PackageReference Include="System.Management" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>
