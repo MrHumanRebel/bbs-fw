@@ -2,31 +2,40 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Loaded="OnLoaded" Unloaded="OnUnloaded">
- <StackPanel Margin="12">
-  <TextBlock Text="Virtual Display" FontSize="24" FontWeight="Bold" />
-  <StackPanel Orientation="Horizontal" Margin="0 16">
-   <TextBlock Text="{Binding Speed}" FontSize="32" Width="230" />
-   <TextBlock Text="{Binding Power}" FontSize="32" />
-  </StackPanel>
-  <TextBlock Text="{Binding Electrical}" FontSize="16" />
-  <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0 12" />
-  <CheckBox Content="Enable bench controls (driven wheel clear)" IsEnabled="{Binding Supported}"
-            IsChecked="{Binding ControlsEnabled}" Margin="0 8" />
-  <StackPanel IsEnabled="{Binding ControlsEnabled}">
-   <StackPanel Orientation="Horizontal" Margin="0 8">
-    <TextBlock Text="PAS level:" VerticalAlignment="Center" Margin="0 0 12 0" />
-    <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}" Width="90" />
-   </StackPanel>
-   <TextBlock Text="Virtual throttle input (%) — uses this level's existing throttle mapping and limits" TextWrapping="Wrap" />
-   <TextBlock Text="{Binding ThrottleDemand, StringFormat={}{0:F0}%}" Margin="0 6 0 0" />
-   <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
-           Value="{Binding ThrottleDemand}" Margin="0 10" />
-   <Button Content="Hold to apply throttle (mouse or Space)" Height="42"
+ <StackPanel>
+  <TextBlock Text="Virtual display" FontSize="26" FontWeight="SemiBold"/>
+  <TextBlock Text="Live telemetry &amp; bench controls" Style="{StaticResource Caption}" Margin="0,4,0,24"/>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+   <Border Style="{StaticResource Card}" Background="{DynamicResource InputBrush}">
+    <StackPanel><TextBlock Text="SPEED" Style="{StaticResource Caption}"/><TextBlock Text="{Binding Speed}" FontSize="38" FontWeight="Light" Margin="0,8,0,0"/></StackPanel>
+   </Border>
+   <Border Grid.Column="2" Style="{StaticResource Card}" Background="{DynamicResource InputBrush}">
+    <StackPanel><TextBlock Text="POWER" Style="{StaticResource Caption}"/><TextBlock Text="{Binding Power}" Foreground="{DynamicResource AccentBrush}" FontSize="38" FontWeight="Light" Margin="0,8,0,0"/></StackPanel>
+   </Border>
+  </Grid>
+  <TextBlock Text="{Binding Electrical}" FontSize="16" Margin="0,18,0,0"/>
+  <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,20"/>
+  <Border Style="{StaticResource Card}" Background="{DynamicResource InputBrush}">
+   <StackPanel>
+    <CheckBox Content="Enable bench controls (driven wheel clear)" IsEnabled="{Binding Supported}" IsChecked="{Binding ControlsEnabled}"/>
+    <StackPanel IsEnabled="{Binding ControlsEnabled}" Margin="0,16,0,0">
+     <DockPanel>
+      <TextBlock Text="Assist level" VerticalAlignment="Center"/>
+      <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}" Width="90" HorizontalAlignment="Right"/>
+     </DockPanel>
+     <TextBlock Text="Virtual throttle" Margin="0,16,0,0" FontWeight="SemiBold"/>
+     <TextBlock Text="Uses the selected level’s throttle mapping and limits." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+     <TextBlock Text="{Binding ThrottleDemand, StringFormat={}{0:F0}%}" FontSize="24" Margin="0,12,0,0"/>
+     <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding ThrottleDemand}" Margin="0,10"/>
+     <Button Content="Hold to apply throttle · mouse or Space" Height="44" Style="{StaticResource PrimaryButton}"
        PreviewMouseLeftButtonDown="ThrottleDown" PreviewMouseLeftButtonUp="ThrottleUp"
        PreviewKeyDown="ThrottleKeyDown" PreviewKeyUp="ThrottleKeyUp"
-       LostMouseCapture="ThrottleLost" LostKeyboardFocus="ThrottleLost" />
-  </StackPanel>
-  <Button Content="STOP / Disable controls" Height="42" Margin="0 16" Click="StopClick" />
-  <TextBlock Text="Throttle stops on release. Firmware expires remote commands after 1.5 seconds without renewal. Test on a supported bike with its driven wheel clear." TextWrapping="Wrap" />
+       LostMouseCapture="ThrottleLost" LostKeyboardFocus="ThrottleLost"/>
+    </StackPanel>
+   </StackPanel>
+  </Border>
+  <Button Content="STOP / Disable controls" Style="{StaticResource DangerButton}" Height="44" Margin="0,16" Click="StopClick"/>
+  <TextBlock Text="Throttle stops on release. Firmware expires remote commands after 1.5 seconds without renewal. Test on a supported bike with its driven wheel clear." Style="{StaticResource Caption}" TextWrapping="Wrap"/>
  </StackPanel>
 </UserControl>

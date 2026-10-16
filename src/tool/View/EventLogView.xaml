@@ -50,7 +50,7 @@
 					Grid.Column="2"
 					Grid.Row="0"
 					Width="200"
-					Height="22"
+					Height="32"
 					Margin="10 0 0 0"
 					Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
 					VerticalAlignment="Center"
@@ -77,36 +77,37 @@
 
 
 		<DataGrid x:Name="LogEventGrid" Grid.Row="1" Grid.Column="0" ItemsSource="{Binding FilteredLogEvents}" Margin="0 2 0 0" 
-			Background="White"
+			Background="{DynamicResource SurfaceBrush}"
 			HeadersVisibility="Column" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="True"
 			SelectionMode="Single" SelectionUnit="FullRow"
 			VerticalScrollBarVisibility="Visible"
 			ext:DataGridExtension.AutoScrollToEnd="{Binding TailLog}">
 
-			<DataGrid.Resources>
-				<SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#e9e9e9e9"/>
-				<SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#000000"/>
-			</DataGrid.Resources>
+
 
 			<DataGrid.RowStyle>
 				<Style TargetType="{x:Type DataGridRow}">
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
 					<Style.Triggers>
 						<DataTrigger Binding="{Binding Level}" Value="Info">
-							<Setter Property="Background" Value="#ffffff" />
+							<Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
 						</DataTrigger>
 						<DataTrigger Binding="{Binding Level}" Value="Warning">
-							<Setter Property="Background" Value="#ffe9b3" />
+							<Setter Property="Background" Value="{DynamicResource WarningBrush}" />
 						</DataTrigger>
 						<DataTrigger Binding="{Binding Level}" Value="Error">
-							<Setter Property="Background" Value="#ffdede" />
+							<Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
 						</DataTrigger>
-					</Style.Triggers>
+					<Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                        </Trigger>
+                    </Style.Triggers>
 				</Style>
 			</DataGrid.RowStyle>
 			<DataGrid.CellStyle>
 				<Style TargetType="{x:Type DataGridCell}">
 					<Setter Property="Padding" Value="5 2 5 2"/>
-					<Setter Property="FocusVisualStyle" Value="{x:Null}" />
+					<Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
 					<Setter Property="BorderThickness" Value="0" />
 					<Setter Property="Template">
 						<Setter.Value>

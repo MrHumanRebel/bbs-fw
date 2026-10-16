@@ -41,7 +41,7 @@
 					  ItemsSource="{Binding ConfigVm.StandardAssistLevels}"
 					  SelectedItem="{Binding SelectedAssistLevel}" Margin="0 4 0 4">
 				<ListView.Style>
-					<Style TargetType="{x:Type ListView}">
+					<Style TargetType="{x:Type ListView}" BasedOn="{StaticResource {x:Type ListView}}">
 						<Setter Property="Visibility" Value="Collapsed" />
 						<Style.Triggers>
 							<DataTrigger Binding="{Binding SelectedOperationModePage.Value}" Value="Standard">
@@ -71,7 +71,7 @@
 					  ItemsSource="{Binding ConfigVm.SportAssistLevels}"
 					  SelectedItem="{Binding SelectedAssistLevel}" Margin="0 4 0 4">
 				<ListView.Style>
-					<Style TargetType="{x:Type ListView}">
+					<Style TargetType="{x:Type ListView}" BasedOn="{StaticResource {x:Type ListView}}">
 						<Setter Property="Visibility" Value="Collapsed" />
 						<Style.Triggers>
 							<DataTrigger Binding="{Binding SelectedOperationModePage.Value}" Value="Sport">
@@ -165,7 +165,7 @@
 
 			</Grid>
 
-			<StackPanel Grid.Row="1" Background="DarkGray" Height="4" />
+			<StackPanel Grid.Row="1" Background="{DynamicResource BorderBrush}" Height="1" Margin="0,16" />
 
 			<Grid Grid.Row="2">
 				<Grid.ColumnDefinitions>
