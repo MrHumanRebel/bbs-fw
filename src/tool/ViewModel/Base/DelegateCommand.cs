@@ -8,7 +8,13 @@ namespace BBSFW.ViewModel.Base
 		private readonly Action _action;
 		private readonly Action<object> _actionWithParam;
 
-		public event EventHandler CanExecuteChanged;
+		// CanExecute is constant, so there are no availability changes to notify.
+        // Explicit accessors satisfy ICommand without storing unused subscribers.
+        public event EventHandler CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
 
 		public DelegateCommand(Action action)
 		{
