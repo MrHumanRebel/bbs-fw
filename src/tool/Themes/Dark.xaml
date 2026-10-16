@@ -1,0 +1,22 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <SolidColorBrush x:Key="CanvasBrush" Color="#101318"/>
+ <SolidColorBrush x:Key="SurfaceBrush" Color="#191E26"/>
+ <SolidColorBrush x:Key="InputBrush" Color="#12171E"/>
+ <SolidColorBrush x:Key="HoverBrush" Color="#283340"/>
+ <SolidColorBrush x:Key="BorderBrush" Color="#34404E"/>
+ <SolidColorBrush x:Key="TextBrush" Color="#EDF3FA"/>
+ <SolidColorBrush x:Key="MutedBrush" Color="#A7B5C6"/>
+ <SolidColorBrush x:Key="AccentBrush" Color="#66E0C0"/>
+ <SolidColorBrush x:Key="AccentTextBrush" Color="#09251E"/>
+ <SolidColorBrush x:Key="SelectionBrush" Color="#244D46"/>
+ <SolidColorBrush x:Key="WarningBrush" Color="#44391E"/>
+ <SolidColorBrush x:Key="ErrorBrush" Color="#4C2832"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#191E26"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#EDF3FA"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#191E26"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#EDF3FA"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#191E26"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#EDF3FA"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#244D46"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#EDF3FA"/>
+</ResourceDictionary>

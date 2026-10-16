@@ -13,5 +13,11 @@ namespace BBSFW
 	/// </summary>
 	public partial class App : Application
 	{
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            BBSFW.Themes.ThemeManager.Initialize();
+            base.OnStartup(e);
+        }
+
 	}
 }

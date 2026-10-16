@@ -7,8 +7,8 @@
 		xmlns:vm="clr-namespace:BBSFW.ViewModel"
 		xmlns:vw="clr-namespace:BBSFW.View"
         mc:Ignorable="d"
-        Title="BBS-FW Tool" Height="640" Width="860"
-		Background="#FFE8E8E8">
+        Style="{StaticResource {x:Type Window}}" Title="BBS-FW Studio" Height="820" Width="1180" MinWidth="1000" MinHeight="650"
+        WindowStartupLocation="CenterScreen">
 
 	<Window.DataContext>
 		<vm:MainViewModel />
@@ -18,11 +18,13 @@
 
 		<Grid.RowDefinitions>
 			<RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
 			<RowDefinition />
+            <RowDefinition Height="Auto" />
 		</Grid.RowDefinitions>
 		
-		<Menu Grid.Row="0">
-			<MenuItem Header="File" Height="22" VerticalContentAlignment="Center">
+		<Menu Grid.Row="0" Margin="20,8,20,0">
+			<MenuItem Header="File" VerticalContentAlignment="Center">
 				<MenuItem Header="Open..." Command="{Binding OpenConfigCommand}" />
 				<MenuItem Header="Save As..." Command="{Binding SaveConfigCommand}" />
 				<Separator />
@@ -30,43 +32,73 @@
 				<Separator />
 				<MenuItem Header="Exit" Command="{Binding ExitCommand}" />
 			</MenuItem>
-			<MenuItem Header="Flash" Height="22" VerticalContentAlignment="Center">
+			<MenuItem Header="Flash" VerticalContentAlignment="Center">
 				<MenuItem Header="Read" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding ReadFlashCommand}" />
 				<MenuItem Header="Write" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding WriteFlashCommand}" />
 				<Separator />
 				<MenuItem Header="Reset" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding ResetFlashCommand}" />
 			</MenuItem>
-			<MenuItem Header="Options" Height="22" VerticalContentAlignment="Center">
+			<MenuItem Header="Options" VerticalContentAlignment="Center">
 				<MenuItem Header="Units">
 					<MenuItem Header="Metric" IsCheckable="True" IsChecked="{Binding ConfigVm.UseMetricUnits}" />
 					<MenuItem Header="Imperial" IsCheckable="True" IsChecked="{Binding ConfigVm.UseImperialUnits}" />
 				</MenuItem>
 			</MenuItem>
-			<MenuItem Header="Help" Height="22" VerticalContentAlignment="Center">
+			<MenuItem Header="Help" VerticalContentAlignment="Center">
 				<MenuItem Header="About" Command="{Binding ShowAboutCommand}" />
 			</MenuItem>
 		</Menu>
 
-		<TabControl Margin="4 8 4 4" Grid.Row="1">
-			<TabItem Header="Connection">
-				<vw:ConnectionView Margin="10" DataContext="{Binding ConnectionVm}" />
+		<Grid Grid.Row="1" Margin="30,24,30,24">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="BBS" FontSize="30" FontWeight="Bold" />
+                    <TextBlock Text=" / STUDIO" FontSize="30" FontWeight="Light" Foreground="{DynamicResource MutedBrush}" />
+                </StackPanel>
+                <TextBlock Text="Your drive. Your settings." Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <Button x:Name="ThemeButton" Content="Light mode" Click="ToggleTheme" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="Switch between light and dark appearance" AutomationProperties.Name="Toggle color theme"/>
+        </Grid>
+        <TabControl x:Name="WorkspaceTabs" Style="{StaticResource SidebarTabs}" TabStripPlacement="Left" Margin="20,0,24,16" Grid.Row="2" SelectionChanged="WorkspaceChanged">
+			<TabItem Header="Connection" Tag="&#xE839;">
+				<vw:ConnectionView Margin="0" DataContext="{Binding ConnectionVm}" />
 			</TabItem>
-			<TabItem Header="Virtual Display">
-                <vw:VirtualDisplayView Margin="10" DataContext="{Binding VirtualDisplayVm}" />
+			<TabItem Header="Virtual Display" Tag="&#xE7F4;">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><vw:VirtualDisplayView Margin="0" DataContext="{Binding VirtualDisplayVm}" /></ScrollViewer>
             </TabItem>
-			<TabItem Header="System">
-				<vw:SystemView Margin="10" />
+			<TabItem Header="System" Tag="&#xE713;">
+				<ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"><vw:SystemView MinWidth="740" Margin="0,0,12,0" /></ScrollViewer>
 			</TabItem>
-			<TabItem Header="Assist Levels">
-				<vw:AssistLevelsView Margin="10" DataContext="{Binding AssistLevelsVm}" />
+			<TabItem Header="Assist Levels" Tag="&#xE9E9;">
+				<vw:AssistLevelsView Margin="0" DataContext="{Binding AssistLevelsVm}" />
 			</TabItem>
-			<TabItem Header="Calibration" DataContext="{Binding CalibrationVm}">
-				<vw:CalibrationView Margin="10" />
+			<TabItem Header="Calibration" Tag="&#xE9D9;" DataContext="{Binding CalibrationVm}">
+				<ScrollViewer VerticalScrollBarVisibility="Auto"><vw:CalibrationView Margin="0,0,12,0" /></ScrollViewer>
 			</TabItem>
-			<TabItem Header="Event Log" DataContext="{Binding EventLogVm}">
-				<vw:EventLogView Margin="10" />
+			<TabItem Header="Event Log" Tag="&#xE9D5;" DataContext="{Binding EventLogVm}">
+				<vw:EventLogView Margin="0" />
 			</TabItem>
 		</TabControl>
+        <Border Grid.Row="3" Background="{DynamicResource SurfaceBrush}" Padding="30,10">
+            <DockPanel>
+                <TextBlock Text="BBS02 / BBSHD / TSDZ2" Style="{StaticResource Caption}" DockPanel.Dock="Right"/>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="7" Height="7" Margin="0,0,8,0">
+                        <Ellipse.Style><Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="{DynamicResource MutedBrush}"/>
+                            <Style.Triggers><DataTrigger Binding="{Binding ConnectionVm.IsConnected}" Value="True"><Setter Property="Fill" Value="{DynamicResource AccentBrush}"/></DataTrigger></Style.Triggers>
+                        </Style></Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock><TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                        <Setter Property="Text" Value="Disconnected"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ConnectionVm.IsConnected}" Value="True"><Setter Property="Text" Value="Controller connected"/></DataTrigger>
+                            <DataTrigger Binding="{Binding ConnectionVm.IsConnecting}" Value="True"><Setter Property="Text" Value="Connecting…"/></DataTrigger>
+                        </Style.Triggers>
+                    </Style></TextBlock.Style></TextBlock>
+                </StackPanel>
+            </DockPanel>
+        </Border>
 		
 	</Grid>
 </Window>
