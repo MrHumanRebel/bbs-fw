@@ -48,7 +48,15 @@ def remote_tags(remote):
     return {tag: sha for tag, sha in tags.items() if parse_tag(tag) is not None}
 
 
-def reserve(remote, commit):
+def release_versions(repository):
+    if not repository:
+        return []
+    output = subprocess.check_output(
+        ["gh", "api", f"repos/{repository}/releases", "--paginate", "--jq", ".[].tag_name"], text=True)
+    return [version for tag in output.splitlines() if (version := parse_tag(tag)) is not None]
+
+
+def reserve(remote, commit, repository=None):
     commit = subprocess.check_output(
         ["git", "rev-parse", "--verify", f"{commit}^{{commit}}"], text=True
     ).strip()
@@ -61,7 +69,7 @@ def reserve(remote, commit):
             if max(version) > 255:
                 raise ValueError("Existing release tag exceeds firmware version limits")
             return version
-        version = next_version([parse_tag(tag) for tag in tags])
+        version = next_version([parse_tag(tag) for tag in tags] + release_versions(repository))
         tag = "v" + ".".join(map(str, version))
         push = subprocess.run(["git", "push", remote, f"{commit}:refs/tags/{tag}"])
         if push.returncode == 0:
@@ -79,8 +87,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--commit", default="HEAD")
+    parser.add_argument("--repository")
     args = parser.parse_args()
-    version = ".".join(map(str, reserve(args.remote, args.commit)))
+    version = ".".join(map(str, reserve(args.remote, args.commit, args.repository)))
     values = f"version={version}\ntag=v{version}\n"
     print(values, end="")
     if os.environ.get("GITHUB_OUTPUT"):

@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from validate_release import validate
+from release_version import remote_tags
 
 
 def gh(*args):
@@ -21,11 +22,25 @@ def find_release(repository, tag):
                  if release["tag_name"] == tag), None)
 
 
+def check_tag(tag, expected_commit, remote):
+    # Git is the source of truth; the REST commit lookup can lag tag creation.
+    commit = remote_tags(remote).get(tag)
+    if commit is None:
+        print(f"::notice::{tag} was deleted. Skipping this obsolete build. "
+              "Start a new workflow run or choose Re-run all jobs to reserve "
+              "the current version and rebuild every asset.")
+        return None
+    if expected_commit and commit != expected_commit:
+        raise RuntimeError("Release tag no longer points to the commit that was built")
+    return commit
+
+
 def publish(tag, directory, repository, expected_commit=None):
     validate(directory, tag.removeprefix("v"))
-    tagged_commit = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha").strip()
-    if expected_commit and tagged_commit != expected_commit:
-        raise RuntimeError("Release tag no longer points to the commit that was built")
+    remote = f"https://github.com/{repository}.git"
+    tagged_commit = check_tag(tag, expected_commit, remote)
+    if tagged_commit is None:
+        return
     assets = sorted(path for path in directory.iterdir() if path.is_file())
     release = find_release(repository, tag)
     if release is not None:
@@ -46,7 +61,8 @@ def publish(tag, directory, repository, expected_commit=None):
         # Use the POST response directly: a new draft may not yet appear in
         # list/tag lookups. Every subsequent operation uses its immutable ID.
         release = json.loads(gh("api", "--method", "POST", f"repos/{repository}/releases",
-                                "-f", f"tag_name={tag}", "-f", f"name=BBS-FW {tag}",
+                                "-f", f"tag_name={tag}", "-f", f"target_commitish={tagged_commit}",
+                                "-f", f"name=BBS-FW {tag}",
                                 "-f", f"body={notes}", "-F", "draft=true",
                                 "-F", "generate_release_notes=true"))
     if release.get("tag_name") != tag or not release.get("draft") or not release.get("id"):
@@ -65,6 +81,8 @@ def publish(tag, directory, repository, expected_commit=None):
     for asset in assets:
         if asset.name not in by_name or by_name[asset.name]["size"] != asset.stat().st_size:
             raise RuntimeError(f"Release upload missing or incomplete: {asset.name}")
+    if check_tag(tag, tagged_commit, remote) is None:
+        return
     # Let GitHub determine latest by its normal version/date rules rather than
     # marking an older concurrent run latest just because it finished last.
     gh("api", "--method", "PATCH", f"repos/{repository}/releases/{release['id']}",

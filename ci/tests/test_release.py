@@ -53,8 +53,17 @@ class VersionTests(unittest.TestCase):
                 git("tag", "-a", "v2.1.0", "-m", "annotated")
                 git("push", "origin", "refs/tags/v2.1.0")
                 self.assertEqual(release_version.reserve("origin", "HEAD"), (2, 1, 0))
+                git("push", "origin", "--delete", "v2.0.0", "v2.0.1", "v2.1.0")
+                self.assertEqual(release_version.remote_tags("origin"), {})
+                self.assertEqual(release_version.reserve("origin", "HEAD"), (2, 0, 0))
+                git("commit", "--allow-empty", "-m", "after reset")
+                self.assertEqual(release_version.reserve("origin", "HEAD"), (2, 0, 1))
             finally:
                 os.chdir(original)
+
+    def test_release_without_tag_keeps_version_reserved(self):
+        with patch.object(release_version.subprocess, "check_output", return_value="a" * 40), patch.object(release_version, "remote_tags", return_value={}), patch.object(release_version, "release_versions", return_value=[(2, 0, 4)]), patch.object(release_version.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+            self.assertEqual(release_version.reserve("origin", "HEAD", "MrHumanRebel/bbs-fw"), (2, 0, 5))
 
     def test_concurrent_reservation_retries_without_moving_tag(self):
         a, b = "a" * 40, "b" * 40
@@ -67,6 +76,9 @@ class VersionTests(unittest.TestCase):
 
 class PayloadTests(unittest.TestCase):
     def setUp(self):
+        tags = patch.object(publish_release, "remote_tags", return_value={"v2.0.0": "a" * 40})
+        self.tag_lookup = tags.start()
+        self.addCleanup(tags.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
@@ -110,13 +122,14 @@ class PayloadTests(unittest.TestCase):
             validate(self.directory, "2.0.0")
 
     def test_changed_tag_cannot_publish_wrong_commit(self):
+        self.tag_lookup.return_value = {"v2.0.0": "b" * 40}
         with patch.object(publish_release, "gh", return_value="b" * 40), \
              patch.object(publish_release.subprocess, "run") as api:
             with self.assertRaises(RuntimeError):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw", "a" * 40)
             api.assert_not_called()
 
-    def simulate_publication(self, existing=False, fail_upload=False, wrong_size=False):
+    def simulate_publication(self, existing=False, fail_upload=False, wrong_size=False, delete_during_upload=False):
         validate(self.directory, "2.0.0")
         release = {"id": 12, "tag_name": "v2.0.0", "draft": True,
                    "upload_url": "https://uploads.github.com/repos/MrHumanRebel/bbs-fw/releases/12/assets{?name,label}",
@@ -156,6 +169,7 @@ class PayloadTests(unittest.TestCase):
                 self.assertIn("draft=false", args)
                 return "{}"
             self.fail(f"Unexpected command: {args}")
+        self.tag_lookup.side_effect = [{"v2.0.0": "a" * 40}, {} if delete_during_upload else {"v2.0.0": "a" * 40}]
         with patch.object(publish_release, "gh", side_effect=api):
             if fail_upload:
                 with self.assertRaises(subprocess.CalledProcessError):
@@ -178,6 +192,15 @@ class PayloadTests(unittest.TestCase):
         self.assertFalse(any(c[:4] == ("api", "--method", "POST", "repos/MrHumanRebel/bbs-fw/releases") for c in calls))
         self.assertIn("PATCH", calls[-1])
 
+    def test_tag_deleted_during_upload_never_publishes(self):
+        self.assertFalse(any("PATCH" in c for c in self.simulate_publication(delete_during_upload=True)))
+
+    def test_deleted_tag_skips_obsolete_build_without_api_mutations(self):
+        self.tag_lookup.return_value = {}
+        with patch.object(publish_release, "gh") as api:
+            publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw", "a" * 40)
+            api.assert_not_called()
+
     def test_failed_upload_never_publishes(self):
         self.assertFalse(any("PATCH" in c for c in self.simulate_publication(fail_upload=True)))
 
@@ -187,16 +210,16 @@ class PayloadTests(unittest.TestCase):
     def test_wrong_creation_response_never_uploads(self):
         response = {"id": 12, "tag_name": "v2.0.1", "draft": True}
         with patch.object(publish_release, "find_release", return_value=None), \
-             patch.object(publish_release, "gh", side_effect=["a" * 40, json.dumps(response)]) as gh:
+             patch.object(publish_release, "gh", side_effect=[json.dumps(response)]) as gh:
             with self.assertRaises(RuntimeError):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertEqual(gh.call_count, 2)
+            self.assertEqual(gh.call_count, 1)
 
     def test_release_listing_failure_does_not_create_or_publish(self):
-        with patch.object(publish_release, "gh", side_effect=["a" * 40, subprocess.CalledProcessError(1, ["gh", "api"])]) as gh:
+        with patch.object(publish_release, "gh", side_effect=[subprocess.CalledProcessError(1, ["gh", "api"])]) as gh:
             with self.assertRaises(subprocess.CalledProcessError):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertEqual(gh.call_count, 2)
+            self.assertEqual(gh.call_count, 1)
 
     def test_published_release_rerun_does_not_replace_assets(self):
         validate(self.directory, "2.0.0")
@@ -204,7 +227,7 @@ class PayloadTests(unittest.TestCase):
         with patch.object(publish_release, "find_release", return_value=release), \
              patch.object(publish_release, "gh", return_value="a" * 40) as gh:
             publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertEqual(gh.call_count, 1)  # Tag verification only.
+            gh.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -63,12 +63,34 @@ For v2.0.0 the public Release contains:
 Build artifacts are also downloadable from their Actions run. Always choose
 the HEX matching the controller; no automatic flashing is performed.
 
+## Manual deletion and version reset
+
+Version allocation reads live remote Git tags and existing GitHub Releases,
+including drafts. Stale tags in a checkout do not affect allocation. Deleting
+only a release leaves its tag reserved; deleting only a tag leaves its release
+version reserved. Delete both to free a version. Deleting all stable v2+
+releases/drafts and tags makes the next full run start at **v2.0.0**, then
+v2.0.1, v2.0.2, as before.
+
+For a reset, cancel active old builds, delete the releases/drafts and tags, then
+start **Run workflow** on the updated main/master branch. For a run already using
+this updated workflow, **Re-run all jobs** also allocates and rebuilds correctly.
+**Re-run failed jobs** alone retains the old version job output and compiled
+asset versions; it cannot turn a v2.0.4 build into a v2.0.0 build.
+
+If a tag is deleted during an active build, publication skips that obsolete
+payload with an Actions notice rather than recreating the deleted tag. It
+checks the remote tag before release creation and again before publication.
+A tag moved to a different commit remains an error. Git transport is used for
+verification rather than the REST commit endpoint, which can lag tag creation.
+The creation request also specifies the exact built commit as its target.
+
 ## Failure recovery and permissions
 
 A failed test does not allocate a tag. A later build failure leaves the reserved
 tag but creates no public Release. An upload failure can leave a draft Release.
 Re-run the failed workflow/jobs to rebuild the same version and resume its
-draft. A published release with all expected assets is left untouched on rerun;
+draft (provided its tag still exists). A published release with all expected assets is left untouched on rerun;
 a published release missing assets fails for investigation rather than silently
 replacing already public downloads.
 
