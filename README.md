@@ -40,10 +40,11 @@ Releases for this fork are published at **[MrHumanRebel/bbs-fw/releases](https:/
 | `bbs-fw-vX.Y.Z-BBSHD.hex` | Bafang BBSHD firmware |
 | `bbs-fw-vX.Y.Z-BBS02.hex` | Bafang BBS02/BBS02B firmware |
 | `bbs-fw-vX.Y.Z-TSDZ2.hex` | TongSheng TSDZ2 firmware |
-| `BBSFWTool-vX.Y.Z-win-x64.exe` | Self-contained Windows x64 configuration tool |
+| `BBSFWTool-vX.Y.Z-win-x64.exe` | Standalone Windows x64 tool, runtime included |
+| `BBSFWTool-vX.Y.Z-win-x64-compact.exe` | Small Windows x64 tool; requires .NET 10 Desktop Runtime (x64) |
 | `SHA256SUMS` | Download integrity checksums |
 
-The Windows release is a single-file executable and does **not** require a separate .NET runtime installation. Select the firmware file for your **actual controller**, not the display or motor label alone.
+Both Windows downloads are single-file executables with the same functionality. The **compact** download requires the [.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0), installed once. Choose the **standalone** download to run without a separate .NET installation. Select the firmware file for your **actual controller**, not the display or motor label alone.
 
 ## Hardware compatibility
 

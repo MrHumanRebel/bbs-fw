@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import publish_release
@@ -77,14 +78,20 @@ class PayloadTests(unittest.TestCase):
         pe[64:68] = b"PE\0\0"
         struct.pack_into("<H", pe, 68, 0x8664)
         (self.directory / "BBSFWTool-v2.0.0-win-x64.exe").write_bytes(pe)
+        (self.directory / "BBSFWTool-v2.0.0-win-x64-compact.exe").write_bytes(pe)
 
     def test_complete_payload_and_checksums(self):
         validate(self.directory, "2.0.0")
-        self.assertEqual(len((self.directory / "SHA256SUMS").read_text().splitlines()), 4)
+        self.assertEqual(len((self.directory / "SHA256SUMS").read_text().splitlines()), 5)
         validate(self.directory, "2.0.0")
 
     def test_missing_controller_rejected(self):
         (self.directory / "bbs-fw-v2.0.0-BBS02.hex").unlink()
+        with self.assertRaises(ValueError):
+            validate(self.directory, "2.0.0")
+
+    def test_missing_compact_app_rejected(self):
+        (self.directory / "BBSFWTool-v2.0.0-win-x64-compact.exe").unlink()
         with self.assertRaises(ValueError):
             validate(self.directory, "2.0.0")
 
@@ -109,63 +116,95 @@ class PayloadTests(unittest.TestCase):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw", "a" * 40)
             api.assert_not_called()
 
-    def test_no_publish_before_all_uploads_verified(self):
-        release = {"id": 12, "draft": True, "assets": []}
-        with patch.object(publish_release, "find_release", return_value=release), \
-             patch.object(publish_release, "gh", side_effect=["", json.dumps(release)]) as gh:
-            with self.assertRaises(RuntimeError):
-                publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertFalse(any("PATCH" in call.args for call in gh.call_args_list))
-
-    def test_successful_upload_then_publish(self):
+    def simulate_publication(self, existing=False, fail_upload=False, wrong_size=False):
         validate(self.directory, "2.0.0")
-        release = {"id": 12, "draft": True, "assets": [
-            {"name": path.name, "size": path.stat().st_size} for path in self.directory.iterdir()]}
-        with patch.object(publish_release, "find_release", return_value=release), \
-             patch.object(publish_release, "gh", side_effect=["", json.dumps(release), ""]) as gh:
-            publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertIn("PATCH", gh.call_args.args)
-            self.assertIn("make_latest=legacy", gh.call_args.args)
-
-    def test_new_draft_is_found_without_using_tag_endpoint(self):
-        validate(self.directory, "2.0.0")
-        draft = {"id": 12, "tag_name": "v2.0.0", "draft": True, "assets": []}
-        uploaded = dict(draft, assets=[
-            {"name": p.name, "size": p.stat().st_size} for p in self.directory.iterdir()])
+        release = {"id": 12, "tag_name": "v2.0.0", "draft": True,
+                   "upload_url": "https://uploads.github.com/repos/MrHumanRebel/bbs-fw/releases/12/assets{?name,label}",
+                   "assets": []}
+        if existing:
+            release["assets"] = [{"id": 99, "name": "SHA256SUMS", "size": 0}]
+        calls = []
         def api(*args):
+            calls.append(args)
+            if args[:2] == ("api", "repos/MrHumanRebel/bbs-fw/commits/v2.0.0"):
+                return "a" * 40
             if args[:2] == ("api", "repos/MrHumanRebel/bbs-fw/releases"):
                 self.assertEqual(args[2:], ("--paginate", "--slurp"))
-                return json.dumps([[], [draft]]) if created[0] else "[[]]"
-            if args[:2] == ("release", "create"):
-                created[0] = True
+                return json.dumps([[], [release]] if existing else [[]])
+            if args[:4] == ("api", "--method", "POST", "repos/MrHumanRebel/bbs-fw/releases"):
+                self.assertIn("draft=true", args)
+                return json.dumps(release)
+            if args[:3] == ("api", "--method", "DELETE"):
+                self.assertEqual(args[3], "repos/MrHumanRebel/bbs-fw/releases/assets/99")
+                release["assets"] = [a for a in release["assets"] if a["id"] != 99]
                 return ""
-            if args[:2] == ("release", "upload"):
-                return ""
+            if args[:3] == ("api", "--method", "POST") and args[3].startswith("https://uploads.github.com/"):
+                if fail_upload:
+                    raise subprocess.CalledProcessError(1, ["gh", "api"])
+                self.assertIn("/releases/12/assets?", args[3])
+                name = parse_qs(urlparse(args[3]).query)["name"][0]
+                path = Path(args[args.index("--input") + 1])
+                self.assertEqual(name, path.name)
+                release["assets"].append({"id": 100 + len(release["assets"]), "name": name,
+                                          "size": path.stat().st_size + int(wrong_size)})
+                return "{}"
             if args[:2] == ("api", "repos/MrHumanRebel/bbs-fw/releases/12"):
-                return json.dumps(uploaded)
+                return json.dumps(release)
             if args[:3] == ("api", "--method", "PATCH"):
                 self.assertEqual(args[3], "repos/MrHumanRebel/bbs-fw/releases/12")
-                return ""
+                self.assertEqual(len(release["assets"]), 6)
+                self.assertIn("draft=false", args)
+                return "{}"
             self.fail(f"Unexpected command: {args}")
-        # Model GitHub hiding the draft from /releases/tags/:tag entirely.
-        created = [False]
         with patch.object(publish_release, "gh", side_effect=api):
-            publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-        self.assertTrue(created[0])
+            if fail_upload:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+            elif wrong_size:
+                with self.assertRaises(RuntimeError):
+                    publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+            else:
+                publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+        return calls
+
+    def test_created_draft_uses_post_response_without_rediscovery(self):
+        calls = self.simulate_publication()
+        self.assertEqual(sum(c[:2] == ("api", "repos/MrHumanRebel/bbs-fw/releases") for c in calls), 1)
+        self.assertIn("PATCH", calls[-1])
+
+    def test_existing_paginated_draft_resumes_by_id(self):
+        calls = self.simulate_publication(existing=True)
+        self.assertTrue(any("DELETE" in c for c in calls))
+        self.assertFalse(any(c[:4] == ("api", "--method", "POST", "repos/MrHumanRebel/bbs-fw/releases") for c in calls))
+        self.assertIn("PATCH", calls[-1])
+
+    def test_failed_upload_never_publishes(self):
+        self.assertFalse(any("PATCH" in c for c in self.simulate_publication(fail_upload=True)))
+
+    def test_incomplete_upload_never_publishes(self):
+        self.assertFalse(any("PATCH" in c for c in self.simulate_publication(wrong_size=True)))
+
+    def test_wrong_creation_response_never_uploads(self):
+        response = {"id": 12, "tag_name": "v2.0.1", "draft": True}
+        with patch.object(publish_release, "find_release", return_value=None), \
+             patch.object(publish_release, "gh", side_effect=["a" * 40, json.dumps(response)]) as gh:
+            with self.assertRaises(RuntimeError):
+                publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
+            self.assertEqual(gh.call_count, 2)
 
     def test_release_listing_failure_does_not_create_or_publish(self):
-        with patch.object(publish_release, "gh", side_effect=subprocess.CalledProcessError(1, ["gh", "api"])) as gh:
+        with patch.object(publish_release, "gh", side_effect=["a" * 40, subprocess.CalledProcessError(1, ["gh", "api"])]) as gh:
             with self.assertRaises(subprocess.CalledProcessError):
                 publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            self.assertEqual(gh.call_count, 1)
+            self.assertEqual(gh.call_count, 2)
 
     def test_published_release_rerun_does_not_replace_assets(self):
         validate(self.directory, "2.0.0")
         release = {"id": 12, "draft": False, "assets": [{"name": p.name} for p in self.directory.iterdir()]}
         with patch.object(publish_release, "find_release", return_value=release), \
-             patch.object(publish_release, "gh") as gh:
+             patch.object(publish_release, "gh", return_value="a" * 40) as gh:
             publish_release.publish("v2.0.0", self.directory, "MrHumanRebel/bbs-fw")
-            gh.assert_not_called()
+            self.assertEqual(gh.call_count, 1)  # Tag verification only.
 
 
 if __name__ == "__main__":

@@ -40,7 +40,8 @@ def validate(directory, version):
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise ValueError("Invalid release version")
     expected = [f"bbs-fw-v{version}-{controller}.hex" for controller in ("BBS02", "BBSHD", "TSDZ2")]
-    expected.append(f"BBSFWTool-v{version}-win-x64.exe")
+    expected.extend((f"BBSFWTool-v{version}-win-x64.exe",
+                     f"BBSFWTool-v{version}-win-x64-compact.exe"))
     actual = {p.name for p in directory.iterdir() if p.is_file() and p.name != "SHA256SUMS"}
     if actual != set(expected):
         raise ValueError(f"Incomplete/unexpected release assets: {actual ^ set(expected)}")
