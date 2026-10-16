@@ -43,7 +43,9 @@ jobs:
           fetch-depth: 0
       - name: Reserve version for this exact commit
         id: version
-        run: python3 ci/release_version.py --commit "$GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ci/release_version.py --commit "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
 
   firmware:
     needs: version
