@@ -50,6 +50,13 @@
   <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
   <Setter Property="FontWeight" Value="SemiBold"/>
+  <Style.Triggers>
+   <Trigger Property="IsEnabled" Value="False">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+   </Trigger>
+  </Style.Triggers>
  </Style>
  <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
   <Setter Property="Background" Value="{DynamicResource ErrorBrush}"/>

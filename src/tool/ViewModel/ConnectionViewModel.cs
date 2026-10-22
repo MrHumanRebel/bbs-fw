@@ -2,6 +2,7 @@ using BBSFW.Model;
 using BBSFW.ViewModel.Base;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Windows;
 using System.Windows.Input;
 
@@ -11,6 +12,8 @@ namespace BBSFW.ViewModel
 	{
 
 		private BbsfwConnection _connection;
+        private long _sessionId;
+        public long SessionId => Interlocked.Read(ref _sessionId);
 
 		private List<ComPort> _comPorts;
 		public List<ComPort> ComPorts
@@ -178,7 +181,8 @@ namespace BBSFW.ViewModel
 
 		private void OnConnected(BbsfwConnection.Controller controller, string fwversion, int configVersion)
 		{
-			IsConnected = true;
+			Interlocked.Increment(ref _sessionId);
+            IsConnected = true;
 			IsConnecting = false;
 
 			Controller = controller;
@@ -188,6 +192,7 @@ namespace BBSFW.ViewModel
 
 		private void OnDisconnected()
 		{
+            Interlocked.Increment(ref _sessionId);
 			IsConnected = false;
 			IsConnecting = false;
 			FirmwareVersion = "N/A";

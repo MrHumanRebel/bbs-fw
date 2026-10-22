@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BBSFW.Model;
 using BBSFW.ViewModel;
 
@@ -30,8 +31,9 @@ class Program
         Console.WriteLine("PASS: " + description);
     }
 
-    static void Main()
+    static async Task Main()
     {
+        await ControllerOperationTests.Run(Check);
         byte[] telemetry = {1,4,1,1,224,1,4,3,232,1,24,1,1,0,0};
         telemetry[14] = (byte)telemetry.Take(14).Sum(x => x);
         var live = VirtualTelemetry.Decode(telemetry);
@@ -70,6 +72,13 @@ class Program
         var restored = new Configuration();
         Check(restored.ParseFromBufferV6(encoded) && restored.WriteToBuffer().SequenceEqual(encoded), "v6 binary round trip");
         Check(restored.UseVoltageCompensation && restored.CurrentRampSmoothnessPercent == 75, "global options restored");
+        var confirmedSnapshot = new Configuration();
+        confirmedSnapshot.CopyFrom(cfg);
+        cfg.MaxCurrentAmps = 25;
+        cfg.StandardAssistLevels[1].MaxCurrentPercent = 75;
+        cfg.SportAssistLevels[2].MaxCurrentPercent = 45;
+        Check(confirmedSnapshot.WriteToBuffer().SequenceEqual(encoded), "confirmed configuration snapshot keeps independent system and profile values");
+        cfg.CopyFrom(confirmedSnapshot);
         encoded[155] = 101;
         Check(!new Configuration().ParseFromBufferV6(encoded), "invalid curve shape rejected");
         var legacy = original.Take(154).ToArray();

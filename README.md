@@ -21,7 +21,7 @@ A configurable alternative to stock firmware, with refined pedal assist and thro
 
 - **Battery management** — Adjustable low-voltage cutoff, voltage calibration and gradual current reduction as the battery approaches its limit.
 - **Thermal protection** — Progressive power limiting using available motor or controller temperature sensors.
-- **Voltage-compensated PAS** — Optional per-level compensation to help maintain more consistent electrical input power as battery voltage drops.
+- **Voltage-compensated PAS** — Optional global compensation to help maintain more consistent electrical input power as battery voltage drops.
 - **Live telemetry** — Monitor wheel speed, battery voltage, current, electrical power and controller status through the Windows tool.
 
 ### Improvements in this fork

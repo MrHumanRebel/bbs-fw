@@ -109,3 +109,14 @@ bindings. It neither connects to a controller nor arms bench controls. The
 `windows-ui-preview`. The runner desktop can be smaller than the tested viewport; offscreen layout
 avoids the top-level HWND size cap. Screenshot dimensions are WPF logical pixels; physical
 multi-monitor DPI behavior still needs a manual Windows check.
+
+## Connection actions and firmware optimization
+
+The same C runner compares the optimized ramp function with its frozen original
+formula over every `uint16_t` progress and `uint8_t` smoothness input for all
+three controller targets. The portable .NET suite tests the shared controller
+operation guard and independent configuration snapshots. Windows UI tests also
+exercise rejection through the real configuration/reset/calibration commands,
+using an injected rejecting confirmation without opening a serial port.
+
+See [scope, hardware review and build measurements](../doc/connection-actions-and-safe-optimization.md).

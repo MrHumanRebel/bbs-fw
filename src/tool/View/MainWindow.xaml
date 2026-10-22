@@ -25,18 +25,18 @@
 		
 		<Menu Grid.Row="0" Margin="20,8,20,0">
 			<MenuItem Header="File" VerticalContentAlignment="Center">
-				<MenuItem Header="Open..." Command="{Binding OpenConfigCommand}" />
-				<MenuItem Header="Save As..." Command="{Binding SaveConfigCommand}" />
+				<MenuItem Header="Open..." IsEnabled="{Binding CanUseFiles}" Command="{Binding OpenConfigCommand}" />
+				<MenuItem Header="Save As..." IsEnabled="{Binding CanUseFiles}" Command="{Binding SaveConfigCommand}" />
 				<Separator />
 				<MenuItem Header="Save Log..." Command="{Binding SaveLogCommand}" />
 				<Separator />
 				<MenuItem Header="Exit" Command="{Binding ExitCommand}" />
 			</MenuItem>
 			<MenuItem Header="Flash" VerticalContentAlignment="Center">
-				<MenuItem Header="Read" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding ReadFlashCommand}" />
-				<MenuItem Header="Write" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding WriteFlashCommand}" />
+				<MenuItem Header="Read" IsEnabled="{Binding CanUseController}" Command="{Binding ReadFlashCommand}" />
+				<MenuItem Header="Write" IsEnabled="{Binding CanUseController}" Command="{Binding WriteFlashCommand}" />
 				<Separator />
-				<MenuItem Header="Reset" IsEnabled="{Binding ConnectionVm.IsConnected}" Command="{Binding ResetFlashCommand}" />
+				<MenuItem Header="Reset" IsEnabled="{Binding CanUseController}" Command="{Binding ResetFlashCommand}" />
 			</MenuItem>
 			<MenuItem Header="Options" VerticalContentAlignment="Center">
 				<MenuItem Header="Units">
@@ -61,7 +61,7 @@
         </Grid>
         <TabControl x:Name="WorkspaceTabs" Style="{StaticResource SidebarTabs}" TabStripPlacement="Left" Margin="20,0,24,16" Grid.Row="2" SelectionChanged="WorkspaceChanged">
 			<TabItem Header="Connection" Tag="&#xE839;">
-				<vw:ConnectionView Margin="0" DataContext="{Binding ConnectionVm}" />
+				<vw:ConnectionView Margin="0" />
 			</TabItem>
 			<TabItem Header="Virtual Display" Tag="&#xE7F4;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><vw:VirtualDisplayView Margin="0" DataContext="{Binding VirtualDisplayVm}" /></ScrollViewer>
