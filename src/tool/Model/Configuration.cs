@@ -885,7 +885,8 @@ namespace BBSFW.Model
 		{
 			var serializer = new XmlSerializer(typeof(Configuration));
 			var settings = new XmlWriterSettings { Encoding = Encoding.UTF8, Indent = true };
-			using (var xmlWriter = XmlWriter.Create(new StreamWriter(filepath), settings))
+			using (var stream = new StreamWriter(filepath))
+			using (var xmlWriter = XmlWriter.Create(stream, settings))
 			{
 				serializer.Serialize(xmlWriter, this);
 			}

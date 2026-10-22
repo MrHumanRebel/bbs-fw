@@ -53,6 +53,8 @@ internal static class AdaptivePowerTests
         try
         {
             cfg.WriteToFile(path);
+            using (var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                check(exclusive.Length > 0, "XML save releases the file for immediate exclusive access");
             var restored = new Configuration(); restored.ReadFromFile(path);
             check(restored.WriteToBuffer().SequenceEqual(payload), "new XML retains adaptive settings without legacy compensation migration");
             string validXml = File.ReadAllText(path);
