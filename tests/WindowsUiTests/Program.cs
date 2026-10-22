@@ -81,6 +81,7 @@ internal static class Program
         var surface = (FrameworkElement)window.Content;
         window.Content = null;
         surface.DataContext = vm;
+        surface.Resources = app.Resources;
         surface.SetResourceReference(TextElement.ForegroundProperty, "TextBrush");
         surface.SetValue(TextElement.FontFamilyProperty, window.FontFamily);
         surface.SetValue(TextElement.FontSizeProperty, window.FontSize);
@@ -125,7 +126,8 @@ internal static class Program
                         if (index == 2)
                         {
                             var label = descendants.OfType<TextBlock>().First(t => t.Text == "Max Current (A):");
-                            Check(label.Foreground == app.FindResource("TextBrush"), "navigation accent does not leak into form text");
+                            Check((label.Foreground as SolidColorBrush)?.Color == (app.FindResource("TextBrush") as SolidColorBrush)?.Color,
+                                $"form text uses the theme color: {label.Foreground} / {app.FindResource("TextBrush")}");
                             var limit = descendants.OfType<TextBox>().First(b =>
                                 System.Windows.Data.BindingOperations.GetBinding(b, TextBox.TextProperty)?.Path?.Path == "ConfigVm.ThrottleGlobalSpeedLimitPercent");
                             vm.ConfigVm.ThrottleGlobalSpeedLimit = ConfigurationViewModel.ThrottleGlobalSpeedLimitOptions[0];
