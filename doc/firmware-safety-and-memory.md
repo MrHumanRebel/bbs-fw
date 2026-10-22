@@ -110,7 +110,7 @@ whose maximum intermediate product is 40000.
 | --- | --- | --- | --- |
 | BBS02 | Flash 25,805 / 25,762 bytes | XRAM 904 / 861 bytes | 150 / 157 bytes available |
 | BBSHD | Flash 27,361 / 27,318 bytes | XRAM 918 / 875 bytes | 138 / 145 bytes available |
-| TSDZ2 | CODE 15,655 / 14,733 bytes | DATA 587 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
+| TSDZ2 | Image 16,396 / 15,464; CODE 15,655 / 14,733 bytes | DATA 587 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
 
 Measurements use clean SDCC **4.5.0** builds, comparing the preceding Adaptive
 Power implementation (`f116eab`) with this hardening/optimization patch. The table
@@ -118,7 +118,9 @@ reports firmware flash/CODE, not Intel HEX text-file size. Linker stack capacity
 and STM8 SSEG reservation are not measurements of peak runtime stack use.
 
 `ci/check_firmware_size.py` rejects flash/static-RAM growth or reduced 8051 stack
-capacity beyond the preceding implementation's budgets. These regression budgets
+capacity beyond the preceding implementation's budgets. The STM8 check includes
+the complete HEX address span so vectors, startup code and constant tables cannot
+escape a check of the CODE section alone. These regression budgets
 are deliberately distinct from MCU ratings. PR CI builds all three controllers,
 runs host regressions, and executes the extracted shipping conversion using
 SDCC/uCsim; release builds also enforce the size budgets. No global compiler

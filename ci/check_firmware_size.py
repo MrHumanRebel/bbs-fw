@@ -7,10 +7,15 @@ import json
 from pathlib import Path
 import re
 
+try:
+    from .validate_release import validate_hex
+except ImportError:  # Direct script execution.
+    from validate_release import validate_hex
+
 BUDGETS = {
     "BBS02": {"flash": 25805, "xram": 904, "stack_available": 150},
     "BBSHD": {"flash": 27361, "xram": 918, "stack_available": 138},
-    "TSDZ2": {"code": 15655, "data": 587, "initialized": 61},
+    "TSDZ2": {"code": 15655, "data": 587, "initialized": 61, "image_span": 16396},
 }
 
 
@@ -21,11 +26,33 @@ def require(pattern, text):
     return int(match[1])
 
 
+def flash_span(path, start):
+    # Include vectors, startup and constants as well as CODE; a large const table
+    # must not escape the STM8 regression budget by living in a different section.
+    validate_hex(path)
+    base = 0
+    end = start
+    for line in path.read_text().splitlines():
+        record = bytes.fromhex(line[1:])
+        kind = record[3]
+        if kind == 4:
+            base = int.from_bytes(record[4:-1], "big") << 16
+        elif kind == 2:
+            base = int.from_bytes(record[4:-1], "big") << 4
+        elif kind == 0:
+            address = base + int.from_bytes(record[1:3], "big")
+            if address < start:
+                raise ValueError("Firmware data appears below the target flash origin")
+            end = max(end, address + record[0])
+    return end - start
+
+
 def check(controller, directory):
     if controller == "TSDZ2":
         report = (directory / "bbs-fw.map").read_text()
         values = {name.lower(): require(r"^" + name + r"\s+[0-9A-F]+\s+[0-9A-F]+\s*=\s*(\d+)\. bytes", report)
                   for name in ("CODE", "DATA", "INITIALIZED")}
+        values["image_span"] = flash_span(directory / "bbs-fw.hex", 0x8000)
     else:
         report = (directory / "bbs-fw.mem").read_text()
         values = {

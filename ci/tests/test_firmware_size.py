@@ -26,12 +26,23 @@ class FirmwareSizeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             report = "CODE 000082E5 0000398F = 14735. bytes\nDATA 00000001 00000245 = 581. bytes\nINITIALIZED 00000246 0000003D = 61. bytes\n"
+            (directory / "bbs-fw.hex").write_text(":01800000017E\n:00000001FF\n")
             (directory / "bbs-fw.map").write_text(report)
             self.assertEqual(check("TSDZ2", directory)["code"], 14735)
             for original, excess in (("14735", "15656"), ("581", "588"), ("61.", "62.")):
                 (directory / "bbs-fw.map").write_text(report.replace(original, excess))
                 with self.assertRaises(ValueError):
                     check("TSDZ2", directory)
+
+    def test_stm8_constants_cannot_escape_code_budget(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "bbs-fw.map").write_text(
+                "CODE 000082E5 00002710 = 10000. bytes\nDATA 00000001 00000245 = 581. bytes\nINITIALIZED 00000246 0000003D = 61. bytes\n")
+            # Valid HEX with a separate byte just beyond the complete-image budget.
+            (directory / "bbs-fw.hex").write_text(":01800000017E\n:01C00C000132\n:00000001FF\n")
+            with self.assertRaisesRegex(ValueError, "image_span"):
+                check("TSDZ2", directory)
 
     def test_unknown_report_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
