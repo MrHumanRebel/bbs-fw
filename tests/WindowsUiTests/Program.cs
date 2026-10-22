@@ -59,7 +59,9 @@ internal static class Program
         theme.GetMethod("Initialize", BindingFlags.Static | BindingFlags.Public).Invoke(null, null);
         var window = new MainWindow();
         int confirmations = 0;
-        var vm = new MainViewModel((_, _) => { ++confirmations; return false; });
+        bool approveWrites = false;
+        Action onConfirmation = null;
+        var vm = new MainViewModel((_, _) => { ++confirmations; onConfirmation?.Invoke(); return approveWrites; });
         window.DataContext = vm;
         vm.ConfigVm.MaxCurrentAmps = 25;
         vm.ConfigVm.MaxBatteryVolts = 58.8f;
@@ -170,9 +172,10 @@ internal static class Program
             }
             // Exercise the real UI command handlers with rejection injected; never open a serial port.
             vm.ConfigVm.GetConfig().Validate();
-            typeof(ConnectionViewModel).GetProperty(nameof(ConnectionViewModel.ConfigVersion)).SetValue(vm.ConnectionVm, BBSFW.Model.Configuration.CurrentVersion);
-            vm.ConnectionVm.IsConnected = true;
-            vm.ConnectionVm.Controller = BBSFW.Model.BbsfwConnection.Controller.BBSHD;
+            var connected = typeof(ConnectionViewModel).GetMethod("OnConnected", BindingFlags.Instance | BindingFlags.NonPublic);
+            var disconnected = typeof(ConnectionViewModel).GetMethod("OnDisconnected", BindingFlags.Instance | BindingFlags.NonPublic);
+            void Connect() => connected.Invoke(vm.ConnectionVm, new object[] { BBSFW.Model.BbsfwConnection.Controller.BBSHD, "2.0.0", BBSFW.Model.Configuration.CurrentVersion });
+            Connect();
             tabs.SelectedIndex = 0; Layout(new Size(1000, 650)); Pump();
             var buttons = Descendants(surface).OfType<Button>().ToArray();
             var writeButton = buttons.First(b => AutomationProperties.GetAutomationId(b) == "WriteConfiguration");
@@ -186,9 +189,15 @@ internal static class Program
             vm.CalibrationVm.SaveVoltageCommand.Execute(null);
             vm.CalibrationVm.ResetVoltageCommand.Execute(null);
             Check(confirmations == 6 && !vm.ControllerOperations.IsBusy, "buttons, shared menu commands and both calibration writes all ask and honor rejection");
-            vm.ConnectionVm.IsConnected = false;
+            long previousSession = vm.ConnectionVm.SessionId;
+            approveWrites = true;
+            onConfirmation = () => { disconnected.Invoke(vm.ConnectionVm, null); Connect(); };
             vm.WriteFlashCommand.Execute(null);
-            Check(confirmations == 6 && !vm.CanUseController, "disconnected Write cannot prompt or send");
+            Check(confirmations == 7 && vm.ConnectionVm.SessionId != previousSession && !vm.ControllerOperations.IsBusy,
+                "the real connection lifecycle invalidates approved writes after reconnecting in the dialog");
+            disconnected.Invoke(vm.ConnectionVm, null);
+            vm.WriteFlashCommand.Execute(null);
+            Check(confirmations == 7 && !vm.CanUseController, "disconnected Write cannot prompt or send");
             Check(!vm.VirtualDisplayVm.ControlsEnabled, "layout checks never arm bench controls");
             return 0;
         }

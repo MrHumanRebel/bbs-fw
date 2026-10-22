@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace BBSFW.ViewModel.Base
 {
-    /// <summary>Serializes controller requests and obtains fresh approval for every persistent write.</summary>
+    /// <summary>Serializes configuration/calibration requests and obtains fresh approval for every persistent write.</summary>
     public sealed class ControllerOperationGuard : ObservableObject
     {
         private readonly Func<string, string, bool> _confirm;

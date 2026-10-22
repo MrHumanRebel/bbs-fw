@@ -240,7 +240,7 @@ namespace BBSFW.ViewModel
             try
             {
                 await ControllerOperations.RunWrite("Reset controller configuration?",
-                    $"Restore factory configuration defaults on {ConnectionVm.Controller} (firmware {ConnectionVm.FirmwareVersion})?\n\n" +
+                    $"Restore firmware configuration defaults on {ConnectionVm.Controller} (firmware {ConnectionVm.FirmwareVersion})?\n\n" +
                     "This overwrites the controller settings. Save a backup first. Keep the driven wheel clear. " +
                     "Restart the controller before using the reset settings.",
                     () => ConnectionVm.IsConnected && ConnectionVm.SessionId == session,
