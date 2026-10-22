@@ -16,7 +16,7 @@ for target in BBS02 BBSHD TSDZ2; do
 	"$test_dir/config"
 	cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
 		-I src/firmware tests/pas_voltage_test.c -o "$test_dir/voltage"
-	for test in curve ramp_profile global_compensation disabled compensated full cap throttle inactive variable invalid bounds filter wrap brake speed thermal lvc walk walk_release_immediate walk_release_wait_stop walk_release_throttle walk_release_wrap walk_display_only walk_release_cruise speed_limit_cutoff speed_limit_ramp speed_limit_app speed_limit_global speed_limit_override speed_limit_disabled speed_limit_ranges; do
+	for test in curve curve_equivalence ramp_profile global_compensation disabled compensated full cap throttle inactive variable invalid bounds filter wrap brake speed thermal lvc walk walk_release_immediate walk_release_wait_stop walk_release_throttle walk_release_wrap walk_display_only walk_release_cruise speed_limit_cutoff speed_limit_ramp speed_limit_app speed_limit_global speed_limit_override speed_limit_disabled speed_limit_ranges; do
 		"$test_dir/voltage" "$test"
 	done
     for test in brake speed thermal lvc walk walk_release_immediate walk_release_wait_stop walk_release_throttle walk_release_wrap walk_release_cruise; do

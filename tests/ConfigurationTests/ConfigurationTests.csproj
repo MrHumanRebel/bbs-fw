@@ -10,6 +10,7 @@
     <Compile Include="../../src/tool/ViewModel/ConfigurationViewModel.cs" Link="ConfigurationViewModel.cs" />
     <Compile Include="../../src/tool/ViewModel/AssistLevelViewModel.cs" Link="AssistLevelViewModel.cs" />
     <Compile Include="../../src/tool/ViewModel/Base/ObservableObject.cs" Link="ObservableObject.cs" />
+    <Compile Include="../../src/tool/ViewModel/Base/ControllerOperationGuard.cs" Link="ControllerOperationGuard.cs" />
     <Compile Include="../../src/tool/ViewModel/ValueItemViewModel.cs" Link="ValueItemViewModel.cs" />
   </ItemGroup>
 </Project>

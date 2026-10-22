@@ -3,6 +3,7 @@ using BBSFW.ViewModel.Base;
 using Microsoft.Win32;
 using System;
 using System.Reflection;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 
@@ -25,6 +26,10 @@ namespace BBSFW.ViewModel
 		public EventLogViewModel EventLogVm { get; private set; }
 
         public VirtualDisplayViewModel VirtualDisplayVm { get; private set; }
+
+        public ControllerOperationGuard ControllerOperations { get; }
+        public bool CanUseController => ConnectionVm.IsConnected && !ControllerOperations.IsBusy;
+        public bool CanUseFiles => !ControllerOperations.IsBusy;
 
 
 
@@ -70,16 +75,28 @@ namespace BBSFW.ViewModel
 
 
 
-		public MainViewModel()
-		{
+		public MainViewModel() : this(ControllerConfirmation.Ask) { }
+
+        public MainViewModel(Func<string, string, bool> confirmControllerWrite)
+        {
 			ConfigVm = new ConfigurationViewModel();
 
 			ConnectionVm = new ConnectionViewModel();
 			SystemVm = new SystemViewModel(ConfigVm);
 			AssistLevelsVm = new AssistLevelsViewModel(ConfigVm);
-			CalibrationVm = new CalibrationViewModel(ConnectionVm);
 			EventLogVm = new EventLogViewModel();
             VirtualDisplayVm = new VirtualDisplayViewModel(ConnectionVm, ConfigVm);
+            ControllerOperations = new ControllerOperationGuard(confirmControllerWrite);
+            CalibrationVm = new CalibrationViewModel(ConnectionVm, ControllerOperations, VirtualDisplayVm.Stop);
+            ConnectionVm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ConnectionVm.IsConnected)) OnPropertyChanged(nameof(CanUseController));
+            };
+            ControllerOperations.PropertyChanged += (_, e) =>
+            {
+                OnPropertyChanged(nameof(CanUseController));
+                OnPropertyChanged(nameof(CanUseFiles));
+            };
 
 
 			ConnectionVm.EventLogReceived += EventLogVm.AddEvent;
@@ -110,6 +127,7 @@ namespace BBSFW.ViewModel
 
 		private void OnOpenConfig()
 		{
+            if (!CanUseFiles) return;
 			var dialog = new OpenFileDialog();
 			dialog.Filter = "XML File|*.xml";
 			dialog.Title = "Open Configuration";
@@ -130,6 +148,7 @@ namespace BBSFW.ViewModel
 
 		private void OnSaveConfig()
 		{
+            if (!CanUseFiles) return;
 			if (!ValidateConfig())
 			{
 				return;
@@ -155,92 +174,92 @@ namespace BBSFW.ViewModel
 			}
 		}
 
-		private async void OnReadFlash()
-		{
+        private async void OnReadFlash()
+        {
+            if (!CanUseController) return;
             await VirtualDisplayVm.Stop();
-			if (!ConnectionVm.IsConnected)
-			{
-				return;
-			}
+            if (!VerifyConfigVersionForRead()) return;
+            long session = ConnectionVm.SessionId;
+            try
+            {
+                await ControllerOperations.RunRead(
+                    () => ConnectionVm.IsConnected && ConnectionVm.SessionId == session,
+                    () => ReadConfiguration(session));
+            }
+            catch (Exception e) { ShowControllerError(e); }
+        }
 
-			if (!VerifyConfigVersionForRead())
-			{
-				return;
-			}
+        private async Task ReadConfiguration(long session)
+        {
+            var res = await ConnectionVm.GetConnection().ReadConfiguration(TimeSpan.FromSeconds(5));
+            if (!ConnectionVm.IsConnected || ConnectionVm.SessionId != session) return;
+            if (!res.Timeout && res.Result != null)
+                ConfigVm.UpdateFrom(res.Result);
+            else
+                MessageBox.Show("Failed to read configuration from flash, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
 
-			var res = await ConnectionVm.GetConnection().ReadConfiguration(TimeSpan.FromSeconds(5));
-			if (!res.Timeout && res.Result != null)
-			{
-				ConfigVm.UpdateFrom(res.Result);
-			}
-			else
-			{
-				MessageBox.Show("Failed to read configuration from flash, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-			}
-		}
-
-		private async void OnWriteFlash()
-		{
+        private async void OnWriteFlash()
+        {
+            if (!CanUseController) return;
             await VirtualDisplayVm.Stop();
-			if (!ConnectionVm.IsConnected)
-			{
-				return;
-			}
+            if (!ValidateConfig() || !VerifyConfigVersionForWrite()) return;
 
-			if (!ValidateConfig())
-			{
-				return;
-			}
+            // Write exactly the reviewed values, even if a setting changes while awaiting the response.
+            var configuration = new Configuration();
+            configuration.CopyFrom(ConfigVm.GetConfig());
+            long session = ConnectionVm.SessionId;
+            string message = $"Write configuration to {ConnectionVm.Controller} (firmware {ConnectionVm.FirmwareVersion})?\n\n" +
+                $"Maximum current: {configuration.MaxCurrentAmps} A\n" +
+                $"Battery: {configuration.LowCutoffVolts}–{configuration.MaxBatteryVolts:0.##} V\n\n" +
+                "This replaces the settings stored in the controller. Keep the driven wheel clear. " +
+                "Restart the controller before using the new settings.";
+            try
+            {
+                await ControllerOperations.RunWrite("Write controller configuration?", message,
+                    () => ConnectionVm.IsConnected && ConnectionVm.SessionId == session,
+                    async () =>
+                    {
+                        var res = await ConnectionVm.GetConnection().WriteConfiguration(configuration, TimeSpan.FromSeconds(5));
+                        if (res.Timeout)
+                            MessageBox.Show("Failed to write configuration to flash, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        else if (!res.Result)
+                            MessageBox.Show("Failed to write configuration to flash, try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        else
+                            MessageBox.Show("Configuration written. Restart the controller before using the new settings.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    });
+            }
+            catch (Exception e) { ShowControllerError(e); }
+        }
 
-			if (!VerifyConfigVersionForWrite())
-			{
-				return;
-			}
-
-			var res = await ConnectionVm.GetConnection().WriteConfiguration(ConfigVm.GetConfig(), TimeSpan.FromSeconds(5));
-			if (!res.Timeout)
-			{
-				if (res.Result)
-				{
-					MessageBox.Show("Configuration written. Restart the controller before using the new settings.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
-				}
-				else
-				{
-					MessageBox.Show("Failed to write configuration to flash, try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-				}
-			}
-			else
-			{
-				MessageBox.Show("Failed to write configuration to flash, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-			}
-		}
-
-		private async void OnResetFlash()
-		{
+        private async void OnResetFlash()
+        {
+            if (!CanUseController) return;
             await VirtualDisplayVm.Stop();
-			if (!ConnectionVm.IsConnected)
-			{
-				return;
-			}
+            long session = ConnectionVm.SessionId;
+            try
+            {
+                await ControllerOperations.RunWrite("Reset controller configuration?",
+                    $"Restore factory configuration defaults on {ConnectionVm.Controller} (firmware {ConnectionVm.FirmwareVersion})?\n\n" +
+                    "This overwrites the controller settings. Save a backup first. Keep the driven wheel clear. " +
+                    "Restart the controller before using the reset settings.",
+                    () => ConnectionVm.IsConnected && ConnectionVm.SessionId == session,
+                    async () =>
+                    {
+                        var res = await ConnectionVm.GetConnection().ResetConfiguration(TimeSpan.FromSeconds(5));
+                        if (res.Timeout)
+                            MessageBox.Show("Failed to reset configuration, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        else if (!res.Result)
+                            MessageBox.Show("Failed to reset configuration, try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        else if (ConnectionVm.IsConnected && ConnectionVm.SessionId == session && VerifyConfigVersionForRead())
+                            await ReadConfiguration(session);
+                    });
+            }
+            catch (Exception e) { ShowControllerError(e); }
+        }
 
-			var res = await ConnectionVm.GetConnection().ResetConfiguration(TimeSpan.FromSeconds(5));
-			if (!res.Timeout)
-			{
-				if (res.Result)
-				{
-					OnReadFlash();
-				}
-				else
-				{
-					MessageBox.Show("Failed to reset configuration, try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-				}
-			}
-			else
-			{
-				MessageBox.Show("Failed to reset configuration, timeout occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-			}
-		}
-
+        private static void ShowControllerError(Exception error) =>
+            MessageBox.Show(error.Message, "Controller operation failed", MessageBoxButton.OK, MessageBoxImage.Error);
 
 		private void OnShowAbout()
 		{

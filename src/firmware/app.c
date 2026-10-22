@@ -949,7 +949,16 @@ uint16_t current_ramp_curve(uint16_t progress, uint8_t smoothness) RAM_REENTRANT
 {
 	progress = MIN(progress, 1000u);
 	smoothness = MIN(smoothness, 100u);
+	// These exact cases avoid the 32-bit cubic and blend in the application loop.
+	if (smoothness == 0 || progress == 0 || progress == 1000u)
+	{
+		return progress;
+	}
 	uint32_t smooth = ((uint32_t)progress * progress * (3000ul - 2ul * progress)) / 1000000ul;
+	if (smoothness == 100u)
+	{
+		return (uint16_t)smooth;
+	}
 	return (uint16_t)(((uint32_t)progress * (100u - smoothness) + smooth * smoothness) / 100u);
 }
 

@@ -5,6 +5,8 @@ using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
+using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -56,7 +58,9 @@ internal static class Program
         var theme = typeof(MainWindow).Assembly.GetType("BBSFW.Themes.ThemeManager");
         theme.GetMethod("Initialize", BindingFlags.Static | BindingFlags.Public).Invoke(null, null);
         var window = new MainWindow();
-        var vm = (MainViewModel)window.DataContext;
+        int confirmations = 0;
+        var vm = new MainViewModel((_, _) => { ++confirmations; return false; });
+        window.DataContext = vm;
         vm.ConfigVm.MaxCurrentAmps = 25;
         vm.ConfigVm.MaxBatteryVolts = 58.8f;
         vm.ConfigVm.LowCutoffVolts = 42;
@@ -71,6 +75,8 @@ internal static class Program
         vm.AssistLevelsVm.SelectedAssistLevel = vm.ConfigVm.StandardAssistLevels[1];
         vm.ConfigVm.CurrentRampAmpsSecond = 10;
         vm.ConfigVm.CurrentRampSmoothnessPercent = 65;
+        vm.ConfigVm.PasStopDelayMilliseconds = 100;
+        vm.ConfigVm.ShiftInterruptDuration = 100;
         vm.ConfigVm.PasKeepCurrentPercent = 60;
         vm.ConfigVm.PasKeepCurrentCadenceRpm = 40;
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
@@ -120,8 +126,20 @@ internal static class Program
                         if (index == 0)
                         {
                             var header = descendants.OfType<TextBlock>().First(t => t.Text == "Available controllers");
-                            var refresh = descendants.OfType<Button>().First(b => Equals(b.Content, "Refresh"));
+                            var refresh = descendants.OfType<Button>().First(b => AutomationProperties.GetAutomationId(b) == "RefreshAdapters");
                             Check(!Bounds(header, surface).IntersectsWith(Bounds(refresh, surface)), "connection heading does not overlap Refresh");
+                            var expectedCommands = new[] { "OpenConfigCommand", "SaveConfigCommand", "SaveLogCommand", "ReadFlashCommand", "WriteFlashCommand", "ResetFlashCommand" };
+                            var actions = descendants.OfType<Button>().Where(b => expectedCommands.Contains(
+                                BindingOperations.GetBinding(b, Button.CommandProperty)?.Path?.Path)).ToArray();
+                            Check(actions.Length == 6 && actions.All(b => b.Command != null), "Connection exposes all six bound quick actions");
+                            Check(actions.All(b => Descendants(b).OfType<TextBlock>().Any(t => t.FontFamily.Source == "Segoe MDL2 Assets")),
+                                "every quick action includes an icon");
+                            Check(actions.Where(b => BindingOperations.GetBinding(b, Button.CommandProperty)?.Path?.Path is "ReadFlashCommand" or "WriteFlashCommand" or "ResetFlashCommand").All(b => !b.IsEnabled),
+                                "controller quick actions are disabled while disconnected");
+                            Check(actions.All(b => Bounds(b, surface).Left >= 0 && Bounds(b, surface).Right <= size.Width + 1),
+                                "quick actions stay within the window");
+                            Check(actions.All(b => Bounds((FrameworkElement)b.Content, b).Width <= b.ActualWidth - b.Padding.Left - b.Padding.Right + 1),
+                                "quick action icons and labels fit inside buttons");
                         }
                         if (index == 2)
                         {
@@ -150,6 +168,27 @@ internal static class Program
                     }
                 }
             }
+            // Exercise the real UI command handlers with rejection injected; never open a serial port.
+            vm.ConfigVm.GetConfig().Validate();
+            typeof(ConnectionViewModel).GetProperty(nameof(ConnectionViewModel.ConfigVersion)).SetValue(vm.ConnectionVm, BBSFW.Model.Configuration.CurrentVersion);
+            vm.ConnectionVm.IsConnected = true;
+            vm.ConnectionVm.Controller = BBSFW.Model.BbsfwConnection.Controller.BBSHD;
+            tabs.SelectedIndex = 0; Layout(new Size(1000, 650)); Pump();
+            var buttons = Descendants(surface).OfType<Button>().ToArray();
+            var writeButton = buttons.First(b => AutomationProperties.GetAutomationId(b) == "WriteConfiguration");
+            var resetButton = buttons.First(b => AutomationProperties.GetAutomationId(b) == "ResetConfiguration");
+            Check(writeButton.IsEnabled && resetButton.IsEnabled, "controller actions enable after connecting");
+            writeButton.Command.Execute(null);
+            vm.WriteFlashCommand.Execute(null);
+            resetButton.Command.Execute(null);
+            vm.ResetFlashCommand.Execute(null);
+            vm.CalibrationVm.MeasuredBatteryVolts = 50;
+            vm.CalibrationVm.SaveVoltageCommand.Execute(null);
+            vm.CalibrationVm.ResetVoltageCommand.Execute(null);
+            Check(confirmations == 6 && !vm.ControllerOperations.IsBusy, "buttons, shared menu commands and both calibration writes all ask and honor rejection");
+            vm.ConnectionVm.IsConnected = false;
+            vm.WriteFlashCommand.Execute(null);
+            Check(confirmations == 6 && !vm.CanUseController, "disconnected Write cannot prompt or send");
             Check(!vm.VirtualDisplayVm.ControlsEnabled, "layout checks never arm bench controls");
             return 0;
         }

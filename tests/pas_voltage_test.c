@@ -81,6 +81,15 @@ static void run(unsigned milliseconds)
 	}
 }
 
+/* Frozen pre-optimization formula; include every uint16_t/uint8_t input, including clamps. */
+static uint16_t reference_current_ramp_curve(uint16_t progress, uint8_t smoothness)
+{
+    progress = progress < 1000u ? progress : 1000u;
+    smoothness = smoothness < 100u ? smoothness : 100u;
+    uint32_t smooth = ((uint32_t)progress * progress * (3000ul - 2ul * progress)) / 1000000ul;
+    return (uint16_t)(((uint32_t)progress * (100u - smoothness) + smooth * smoothness) / 100u);
+}
+
 int main(int argc, char **argv)
 {
 	assert(argc == 2 || argc == 3);
@@ -105,6 +114,13 @@ int main(int argc, char **argv)
         assert(current_ramp_curve(250, 100) == 156);
         assert(current_ramp_curve(500, 100) == 500);
         assert(current_ramp_curve(750, 100) == 843);
+    }
+    else if (!strcmp(test, "curve_equivalence"))
+    {
+        for (uint32_t progress = 0; progress <= UINT16_MAX; ++progress)
+            for (uint16_t shape = 0; shape <= UINT8_MAX; ++shape)
+                assert(current_ramp_curve((uint16_t)progress, (uint8_t)shape) ==
+                    reference_current_ramp_curve((uint16_t)progress, (uint8_t)shape));
     }
     else if (!strcmp(test, "ramp_profile"))
     {

@@ -1,49 +1,136 @@
-<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="BBSFW.View.ConnectionView" Style="{StaticResource {x:Type UserControl}}">
- <UserControl.Resources><BooleanToVisibilityConverter x:Key="BoolToVis"/></UserControl.Resources>
- <Grid VerticalAlignment="Top" MaxHeight="560">
-  <Grid.ColumnDefinitions><ColumnDefinition Width="1.15*"/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
-  <Border Style="{StaticResource Card}">
-   <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition MinHeight="230" Height="*"/></Grid.RowDefinitions>
-    <DockPanel LastChildFill="True">
-     <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"/>
-     <TextBlock Text="Available controllers" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
-    </DockPanel>
-    <TextBlock Grid.Row="1" Text="Select your programming adapter to connect." Style="{StaticResource Caption}" Margin="0,10,0,20" TextWrapping="Wrap"/>
-    <ListView Grid.Row="2" x:Name="PortList" ItemsSource="{Binding ComPorts}" SelectedItem="{Binding SelectedComPort}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-     <ListView.ItemTemplate><DataTemplate><StackPanel>
-      <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-      <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-     </StackPanel></DataTemplate></ListView.ItemTemplate>
-    </ListView>
-    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False">
-     <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding ComPorts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
-     <TextBlock Text="No adapter found" FontSize="18" HorizontalAlignment="Center"/>
-     <TextBlock Text="Plug in the USB adapter, then refresh." Style="{StaticResource Caption}" Margin="0,8" TextWrapping="Wrap"/>
-    </StackPanel>
-   </Grid>
-  </Border>
-  <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
-   <StackPanel>
-    <TextBlock Text="Controller link" FontSize="22" FontWeight="SemiBold"/>
-    <TextBlock Text="Connect, read the controller configuration, then review your settings before writing changes." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,10,0,24"/>
-    <StackPanel Visibility="{Binding IsDisconnected, Converter={StaticResource BoolToVis}}">
-     <Button Content="Connect" Command="{Binding ConnectCommand}">
-      <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Style.Triggers>
-       <DataTrigger Binding="{Binding SelectedComPort}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
-       <DataTrigger Binding="{Binding IsConnecting}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
-      </Style.Triggers></Style></Button.Style>
-     </Button>
-     <Button Content="Cancel" Command="{Binding DisconnectCommand}" Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVis}}"/>
-     <ProgressBar IsIndeterminate="True" Margin="0,14,0,0" Height="4" Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVis}}"/>
-    </StackPanel>
-    <StackPanel Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
-     <TextBlock Text="Connected" Foreground="{DynamicResource AccentBrush}" FontSize="18"/>
-     <TextBlock Text="{Binding Controller}" FontSize="28" Margin="0,8"/>
-     <TextBlock Text="{Binding FirmwareVersion, StringFormat=Firmware {0}}" Style="{StaticResource Caption}"/>
-     <Button Content="Disconnect" Command="{Binding DisconnectCommand}" Margin="0,24,0,0"/>
-    </StackPanel>
-   </StackPanel>
-  </Border>
- </Grid>
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:BBSFW.View.Controls"
+             x:Class="BBSFW.View.ConnectionView" Style="{StaticResource {x:Type UserControl}}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="ActionIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="QuickAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinHeight" Value="42"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <controls:AdaptiveCardPanel MinimumCardWidth="310" VerticalAlignment="Top">
+            <Border Style="{StaticResource Card}" DataContext="{Binding ConnectionVm}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="230"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Command="{Binding RefreshCommand}" Margin="12,0,0,0"
+                                AutomationProperties.AutomationId="RefreshAdapters" AutomationProperties.Name="Refresh adapters">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE72C;" Style="{StaticResource ActionIcon}"/>
+                                <TextBlock Text="Refresh"/>
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Text="Available controllers" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <TextBlock Grid.Row="1" Text="Select your programming adapter to connect." Style="{StaticResource Caption}" Margin="0,10,0,18" TextWrapping="Wrap"/>
+                    <ListView Grid.Row="2" x:Name="PortList" ItemsSource="{Binding ComPorts}" SelectedItem="{Binding SelectedComPort}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ComPorts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="&#xE88E;" FontFamily="Segoe MDL2 Assets" FontSize="28" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                        <TextBlock Text="No adapter found" FontSize="18" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Plug in the USB adapter, then refresh." Style="{StaticResource Caption}" Margin="0,8" TextWrapping="Wrap" TextAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <StackPanel DataContext="{Binding ConnectionVm}">
+                        <TextBlock Text="Controller link" FontSize="22" FontWeight="SemiBold"/>
+                        <TextBlock Text="Connect your controller to read or write settings." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,16"/>
+                        <StackPanel Visibility="{Binding IsDisconnected, Converter={StaticResource BoolToVis}}">
+                            <Button Command="{Binding ConnectCommand}" AutomationProperties.Name="Connect controller">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedComPort}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                            <DataTrigger Binding="{Binding IsConnecting}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE839;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Connect"/></StackPanel>
+                            </Button>
+                            <Button Command="{Binding DisconnectCommand}" Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE711;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Cancel"/></StackPanel>
+                            </Button>
+                            <ProgressBar IsIndeterminate="True" Margin="0,10,0,0" Height="4" Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                        <DockPanel Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Command="{Binding DisconnectCommand}" Margin="12,0,0,0" VerticalAlignment="Center" AutomationProperties.Name="Disconnect controller">
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8CD;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Disconnect"/></StackPanel>
+                            </Button>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Controller}" Foreground="{DynamicResource AccentBrush}" FontSize="20"/>
+                                <TextBlock Text="{Binding FirmwareVersion, StringFormat=Firmware {0}}" Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                    <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,20,0,16"/>
+                    <TextBlock Text="Configuration workspace" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock Text="FILES" Style="{StaticResource Caption}" Margin="0,12,0,8"/>
+                    <UniformGrid Columns="3">
+                        <Button Command="{Binding OpenConfigCommand}" IsEnabled="{Binding CanUseFiles}" Style="{StaticResource QuickAction}"
+                                ToolTip="Open an XML configuration file" AutomationProperties.AutomationId="OpenConfiguration" AutomationProperties.Name="Open configuration file">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8E5;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Open"/></StackPanel>
+                        </Button>
+                        <Button Command="{Binding SaveConfigCommand}" IsEnabled="{Binding CanUseFiles}" Style="{StaticResource QuickAction}"
+                                ToolTip="Save the current configuration as XML" AutomationProperties.AutomationId="SaveConfiguration" AutomationProperties.Name="Save configuration file">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE74E;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Save"/></StackPanel>
+                        </Button>
+                        <Button Command="{Binding SaveLogCommand}" Style="{StaticResource QuickAction}" Margin="0"
+                                ToolTip="Save the event log" AutomationProperties.AutomationId="SaveEventLog" AutomationProperties.Name="Save event log">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE9D5;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Save log"/></StackPanel>
+                        </Button>
+                    </UniformGrid>
+                    <TextBlock Text="CONTROLLER" Style="{StaticResource Caption}" Margin="0,16,0,8"/>
+                    <UniformGrid Columns="3" IsEnabled="{Binding CanUseController}">
+                        <Button Command="{Binding ReadFlashCommand}" Style="{StaticResource QuickAction}"
+                                ToolTip="Read settings stored in the controller" AutomationProperties.AutomationId="ReadConfiguration" AutomationProperties.Name="Read controller configuration">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE896;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Read"/></StackPanel>
+                        </Button>
+                        <Button Command="{Binding WriteFlashCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,6,0" Padding="8,6" FontSize="12"
+                                ToolTip="Review and confirm before writing to the controller" AutomationProperties.AutomationId="WriteConfiguration" AutomationProperties.Name="Write controller configuration">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE898;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Write"/></StackPanel>
+                        </Button>
+                        <Button Command="{Binding ResetFlashCommand}" Style="{StaticResource QuickAction}" Margin="0"
+                                ToolTip="Confirm before restoring controller defaults" AutomationProperties.AutomationId="ResetConfiguration" AutomationProperties.Name="Reset controller configuration">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE777;" Style="{StaticResource ActionIcon}"/><TextBlock Text="Reset"/></StackPanel>
+                        </Button>
+                    </UniformGrid>
+                    <TextBlock Text="Writes always require confirmation. Save a backup before replacing controller settings."
+                               Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                </StackPanel>
+            </Border>
+        </controls:AdaptiveCardPanel>
+    </ScrollViewer>
 </UserControl>
