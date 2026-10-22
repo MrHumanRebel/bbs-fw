@@ -11,7 +11,7 @@ namespace BBSFW.Model
 	[XmlRoot("BBSFW", Namespace ="https://github.com/danielnilsson9/bbs-fw")]
 	public class Configuration
 	{
-		public const int CurrentVersion = 5;
+		public const int CurrentVersion = 6;
 		public const int MinVersion = 1;
 		public const int MaxVersion = CurrentVersion;
 
@@ -20,6 +20,7 @@ namespace BBSFW.Model
 		public const int ByteSizeV3 = 149;
 		public const int ByteSizeV4 = 152;
 		public const int ByteSizeV5 = 154;
+        public const int ByteSizeV6 = 156;
 
 		public enum Feature
 		{
@@ -43,6 +44,7 @@ namespace BBSFW.Model
 					return ByteSizeV4;
 				case 5:
 					return ByteSizeV5;
+                case 6: return ByteSizeV6;
 			}
 
 			return 0;
@@ -161,6 +163,8 @@ namespace BBSFW.Model
 		// global
 		public uint MaxCurrentAmps;
 		public uint CurrentRampAmpsSecond;
+        public bool UseVoltageCompensation;
+        public uint CurrentRampSmoothnessPercent;
 		public float MaxBatteryVolts;
 		public uint LowCutoffVolts;
 		public uint MaxSpeedKph;
@@ -656,8 +660,29 @@ namespace BBSFW.Model
 				}
 			}
 
+            CurrentRampSmoothnessPercent = 0;
+            UseVoltageCompensation = false;
+            MigrateLegacyVoltageCompensation();
 			return true;
 		}
+
+        public void MigrateLegacyVoltageCompensation()
+        {
+            foreach (var level in StandardAssistLevels.Concat(SportAssistLevels))
+            {
+                UseVoltageCompensation |= level.Type.HasFlag(AssistFlagsType.VoltageCompensation);
+                level.Type &= ~AssistFlagsType.VoltageCompensation;
+            }
+        }
+
+        public bool ParseFromBufferV6(byte[] buffer)
+        {
+            if (buffer.Length != ByteSizeV6 || buffer[155] > 100 || buffer[154] > 1) return false;
+            if (!ParseFromBufferV5(buffer.Take(ByteSizeV5).ToArray())) return false;
+            UseVoltageCompensation = buffer[154] != 0;
+            CurrentRampSmoothnessPercent = buffer[155];
+            return true;
+        }
 
 		public byte[] WriteToBuffer()
 		{
@@ -723,6 +748,8 @@ namespace BBSFW.Model
 					bw.Write((byte)Math.Round(SportAssistLevels[i].TorqueAmplificationFactor * 10));
 				}
 
+                bw.Write(UseVoltageCompensation);
+                bw.Write((byte)CurrentRampSmoothnessPercent);
 				return s.ToArray();
 			}
 		}
@@ -734,6 +761,8 @@ namespace BBSFW.Model
 			UseFreedomUnits = cfg.UseFreedomUnits;
 			MaxCurrentAmps = cfg.MaxCurrentAmps;
 			CurrentRampAmpsSecond = cfg.CurrentRampAmpsSecond;
+            UseVoltageCompensation = cfg.UseVoltageCompensation;
+            CurrentRampSmoothnessPercent = cfg.CurrentRampSmoothnessPercent;
 			MaxBatteryVolts = cfg.MaxBatteryVolts;
 			LowCutoffVolts = cfg.LowCutoffVolts;
 			UseSpeedSensor = cfg.UseSpeedSensor;
@@ -789,6 +818,7 @@ namespace BBSFW.Model
 			using (var reader = new FileStream(filepath, FileMode.Open))
 			{
 				var obj = serializer.Deserialize(reader) as Configuration;
+				obj.MigrateLegacyVoltageCompensation();
 				CopyFrom(obj);
 			}
 		}
@@ -807,6 +837,7 @@ namespace BBSFW.Model
 		{
 			ValidateLimits(MaxCurrentAmps, 5, MaxCurrentLimitAmps, "Max Current (A)");
 			ValidateLimits(CurrentRampAmpsSecond, 1, 255, "Current Ramp (A/s)");
+            ValidateLimits(CurrentRampSmoothnessPercent, 0, 100, "Ramp Smoothness (%)");
 			ValidateLimits((uint)MaxBatteryVolts, 1, 100, "Max Battery Voltage (V)");
 			ValidateLimits(LowCutoffVolts, 1, 100, "Low Voltage Cut Off (V)");
 

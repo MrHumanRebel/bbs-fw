@@ -1,5 +1,7 @@
 using System;
 using System.Windows;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 using BBSFW.Themes;
@@ -17,17 +19,28 @@ namespace BBSFW
             Width = Math.Min(Width, workArea.Width);
             Height = Math.Min(Height, workArea.Height);
             UpdateThemeLabel();
+            SourceInitialized += (_, _) => UpdateThemeLabel();
+            ThemeManager.Changed += UpdateThemeLabel;
+            Closed += (_, _) => ThemeManager.Changed -= UpdateThemeLabel;
         }
 
         private void ToggleTheme(object sender, RoutedEventArgs e)
         {
             ThemeManager.Apply(!ThemeManager.IsDark);
-            UpdateThemeLabel();
         }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
 
         private void UpdateThemeLabel()
         {
             ThemeButton.Content = ThemeManager.IsDark ? "☀  Light mode" : "☾  Dark mode";
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                int dark = ThemeManager.IsDark ? 1 : 0;
+                DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
+            }
         }
 
         private void WorkspaceChanged(object sender, SelectionChangedEventArgs e)

@@ -165,22 +165,6 @@ namespace BBSFW.ViewModel
 			}
 		}
 
-		public bool IsVoltageCompensationEnabled
-		{
-			get { return _level.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation); }
-			set
-			{
-				if (value != IsVoltageCompensationEnabled)
-				{
-					if (value)
-						_level.Type |= Configuration.AssistFlagsType.VoltageCompensation;
-					else
-						_level.Type &= ~Configuration.AssistFlagsType.VoltageCompensation;
-					OnPropertyChanged(nameof(IsVoltageCompensationEnabled));
-				}
-			}
-		}
-
 		public bool IsThrottleEnabled
 		{
 			get { return _level.Type.HasFlag(Configuration.AssistFlagsType.Throttle); }

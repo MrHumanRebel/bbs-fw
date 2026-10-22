@@ -139,9 +139,26 @@ namespace BBSFW.ViewModel
 				{
 					_config.MaxCurrentAmps = value;
 					OnPropertyChanged(nameof(MaxCurrentAmps));
+                    OnPropertyChanged(nameof(CurrentRiseSeconds));
 				}
 			}
 		}
+
+        public bool UseVoltageCompensation
+        {
+            get => _config.UseVoltageCompensation;
+            set { if (_config.UseVoltageCompensation != value) { _config.UseVoltageCompensation = value; OnPropertyChanged(nameof(UseVoltageCompensation)); } }
+        }
+        public uint CurrentRampSmoothnessPercent
+        {
+            get => _config.CurrentRampSmoothnessPercent;
+            set { value = Math.Min(100, value); if (_config.CurrentRampSmoothnessPercent != value) { _config.CurrentRampSmoothnessPercent = value; OnPropertyChanged(nameof(CurrentRampSmoothnessPercent)); } }
+        }
+        public double CurrentRiseSeconds
+        {
+            get => ResponseMath.RiseSeconds(MaxCurrentAmps, CurrentRampAmpsSecond);
+            set { if (double.IsFinite(value) && value > 0) CurrentRampAmpsSecond = (uint)Math.Clamp(Math.Round(MaxCurrentAmps / value), 1, 255); }
+        }
 
 		public uint CurrentRampAmpsSecond
 		{
@@ -152,6 +169,7 @@ namespace BBSFW.ViewModel
 				{
 					_config.CurrentRampAmpsSecond = value;
 					OnPropertyChanged(nameof(CurrentRampAmpsSecond));
+                    OnPropertyChanged(nameof(CurrentRiseSeconds));
 				}
 			}
 		}

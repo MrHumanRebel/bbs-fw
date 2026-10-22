@@ -18,11 +18,8 @@ namespace BBSFW.Properties
     {
         public static Settings Default = new Settings();
         public bool UseFreedomUnits = false;
+        public void Save() { }
     }
-}
-namespace BBSFW.ViewModel
-{
-    public class ConfigurationViewModel { public bool IsTorqueSensorSupported => true; }
 }
 
 class Program
@@ -44,40 +41,69 @@ class Program
         Check(VirtualTelemetry.Decode(telemetry.Take(14).ToArray()) == null, "partial telemetry rejected");
         telemetry[14] ^= 1;
         Check(VirtualTelemetry.Decode(telemetry) == null, "bad telemetry checksum rejected");
+        var system = new ConfigurationViewModel();
+        system.MaxCurrentAmps = 25;
+        system.CurrentRampAmpsSecond = 10;
+        Check(system.CurrentRiseSeconds == 2.5, "full rise time follows current limit and average rate");
+        system.CurrentRiseSeconds = 1.25;
+        Check(system.CurrentRampAmpsSecond == 20, "duration editing updates the encoded rate");
+        system.CurrentRampSmoothnessPercent = 255;
+        Check(system.CurrentRampSmoothnessPercent == 100, "view model bounds curve softness");
+        system.UseVoltageCompensation = true;
+        Check(system.GetConfig().UseVoltageCompensation && system.GetConfig().StandardAssistLevels.Concat(system.GetConfig().SportAssistLevels).All(l =>
+            !l.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation)),
+            "one system toggle persists without per-level flags");
+        int durationChanges = 0;
+        system.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(system.CurrentRiseSeconds)) ++durationChanges; };
+        system.MaxCurrentAmps = 30; system.CurrentRampAmpsSecond = 15;
+        Check(durationChanges == 2 && system.CurrentRiseSeconds == 2, "curve duration notifies after either input changes");
         var cfg = new Configuration();
-        var level = cfg.StandardAssistLevels[1];
-        level.Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.Throttle;
-        level.MaxCurrentPercent = 40;
+        cfg.StandardAssistLevels[1].Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.Throttle;
         cfg.MaxBatteryVolts = 58.8f;
-        var vm = new AssistLevelViewModel(new ConfigurationViewModel(), 1, level);
         var original = cfg.WriteToBuffer();
-        Check(original.Length == 154 && Configuration.CurrentVersion == 5, "existing v5 payload size preserved");
-        Check(!vm.IsVoltageCompensationEnabled, "legacy configuration defaults to disabled");
-
-        int notifications = 0;
-        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.IsVoltageCompensationEnabled)) notifications++; };
-        vm.IsVoltageCompensationEnabled = true;
+        Check(original.Length == 156 && Configuration.CurrentVersion == 6, "v6 payload includes global compensation and curve shape");
+        Check(!cfg.UseVoltageCompensation && cfg.CurrentRampSmoothnessPercent == 0, "new controls default to compensation off and linear ramp");
+        cfg.UseVoltageCompensation = true;
+        cfg.CurrentRampSmoothnessPercent = 75;
         var encoded = cfg.WriteToBuffer();
-        Check(encoded.Zip(original, (a, b) => a ^ b).Count(x => x != 0) == 1 &&
-              encoded.Zip(original, (a, b) => a ^ b).Single(x => x != 0) == 0x80,
-              "enabling changes only bit 0x80 in the selected level");
+        Check(encoded.Take(154).SequenceEqual(original.Take(154)), "v5 prefix remains unchanged by global options");
         var restored = new Configuration();
-        Check(restored.ParseFromBufferV5(encoded) && restored.WriteToBuffer().SequenceEqual(encoded), "binary round trip");
-        Check(restored.StandardAssistLevels[1].Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation), "new flag restored from binary");
-
+        Check(restored.ParseFromBufferV6(encoded) && restored.WriteToBuffer().SequenceEqual(encoded), "v6 binary round trip");
+        Check(restored.UseVoltageCompensation && restored.CurrentRampSmoothnessPercent == 75, "global options restored");
+        encoded[155] = 101;
+        Check(!new Configuration().ParseFromBufferV6(encoded), "invalid curve shape rejected");
+        var legacy = original.Take(154).ToArray();
+        legacy[34 + 6] |= 0x80;
+        var migrated = new Configuration();
+        Check(migrated.ParseFromBufferV5(legacy) && migrated.UseVoltageCompensation && migrated.CurrentRampSmoothnessPercent == 0,
+              "v5 per-level flag migrates to global control and linear ramp");
+        Check(migrated.StandardAssistLevels.Concat(migrated.SportAssistLevels).All(x => !x.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation)), "legacy per-level flags cleared");
         string path = Path.GetTempFileName();
         try
         {
             cfg.WriteToFile(path);
-            var fromXml = new Configuration();
+            var fromXml = new Configuration(); fromXml.ReadFromFile(path);
+            Check(fromXml.WriteToBuffer().SequenceEqual(cfg.WriteToBuffer()), "XML preserves global controls and every existing field");
+            cfg.UseVoltageCompensation = false;
+            cfg.CurrentRampSmoothnessPercent = 0;
+            cfg.StandardAssistLevels[1].Type |= Configuration.AssistFlagsType.VoltageCompensation;
+            cfg.WriteToFile(path);
             fromXml.ReadFromFile(path);
-            Check(fromXml.StandardAssistLevels[1].Type == level.Type, "XML flag round trip");
+            Check(fromXml.UseVoltageCompensation, "legacy XML flags migrate to global control");
         }
         finally { File.Delete(path); }
-
-        vm.IsVoltageCompensationEnabled = false;
-        Check(cfg.WriteToBuffer().SequenceEqual(original), "disabling restores the original payload exactly");
-        Check(notifications == 2, "view model notifies on both changes");
-        Check(restored.SportAssistLevels.All(x => !x.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation)), "unselected levels stay disabled");
+        for (uint shape = 0; shape <= 100; ++shape)
+        {
+            int last = 0;
+            for (int t = 0; t <= 1000; ++t)
+            {
+                int value = ResponseMath.Ramp(t, shape);
+                if (value < last || value > 1000 || (shape == 0 && value != t)) throw new Exception("Invalid curve");
+                last = value;
+            }
+            if (last != 1000) throw new Exception("Invalid curve endpoint");
+        }
+        Check(ResponseMath.Ramp(250, 100) == 156 && ResponseMath.Ramp(500, 100) == 500 && ResponseMath.Ramp(750, 100) == 843,
+              "UI curve matches firmware integer reference values; all shapes monotonic");
     }
 }

@@ -5,7 +5,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/tool/Model/VirtualTelemetry.cs" Link="VirtualTelemetry.cs" />
+    <Compile Include="../../src/tool/Model/ResponseMath.cs" Link="ResponseMath.cs" />
     <Compile Include="../../src/tool/Model/Configuration.cs" Link="Configuration.cs" />
+    <Compile Include="../../src/tool/ViewModel/ConfigurationViewModel.cs" Link="ConfigurationViewModel.cs" />
     <Compile Include="../../src/tool/ViewModel/AssistLevelViewModel.cs" Link="AssistLevelViewModel.cs" />
     <Compile Include="../../src/tool/ViewModel/Base/ObservableObject.cs" Link="ObservableObject.cs" />
     <Compile Include="../../src/tool/ViewModel/ValueItemViewModel.cs" Link="ValueItemViewModel.cs" />
