@@ -9,7 +9,10 @@ internal static class AdaptivePowerTests
     public static void Run(Action<bool, string> check)
     {
         var vm = new ConfigurationViewModel();
+        vm.MaxCurrentAmps = 50;
+        vm.MaxBatteryVolts = 100;
         var level = vm.StandardAssistLevels[3];
+        level.TargetCurrentPercent = 100;
         level.SelectedType = level.AssistBaseTypeOptions.First(x => x.Value == AssistLevelViewModel.AssistBaseType.Pas);
         level.SelectedPasVariant = level.AssistPasVariantOptions.First(x => x.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
         check(level.IsPasAssistAdaptiveVariant && level.AdaptivePowerWatts == 250, "Adaptive Power is a PAS variant with its own per-level budget");
@@ -67,6 +70,54 @@ internal static class AdaptivePowerTests
                 "old XML compensation name migrates without selecting Adaptive Power");
         }
         finally { File.Delete(path); }
+        vm.MaxCurrentAmps = 25; vm.MaxBatteryVolts = 48; level.TargetCurrentPercent = 100;
+        level.AdaptivePowerWatts = uint.MaxValue;
+        check(level.AdaptivePowerWatts == 1200 && level.AdaptivePowerLimitWatts == 1200, "25 A at 48 V caps the budget at 1200 W");
+        vm.MaxCurrentAmps = 33; vm.MaxBatteryVolts = 52;
+        level.AdaptivePowerWatts = uint.MaxValue;
+        check(level.AdaptivePowerWatts == 1710, "33 A at 52 V rounds the 1716 W ceiling downward to 1710 W");
+        level.TargetCurrentPercent = 50;
+        check(level.AdaptivePowerWatts == 850, "reducing level current immediately reduces the budget");
+        level.AdaptivePowerWatts = 19;
+        check(level.AdaptivePowerWatts == 10, "budget rounding never increases the requested watt limit");
+        vm.MaxBatteryVolts = 48; vm.MaxCurrentAmps = 5;
+        level.AdaptivePowerWatts = uint.MaxValue;
+        check(level.AdaptivePowerWatts == 120, "global current and voltage changes propagate into the level ceiling");
+        level.TargetCurrentPercent = 0;
+        check(level.AdaptivePowerWatts == 0 && level.AdaptivePowerLimitWatts == 0, "zero current never silently becomes a positive budget");
+        var motor = new Configuration(BbsfwConnection.Controller.TSDZ2) { MaxCurrentAmps = 33, MaxBatteryVolts = 52 };
+        motor.StandardAssistLevels[1].MaxCurrentPercent = 100;
+        check(motor.GetAdaptivePowerLimitWatts(motor.StandardAssistLevels[1]) == 1040, "TSDZ2 preview respects its 20 A platform ceiling even before validation");
+        bool wrongControllerRejected = false;
+        try { vm.GetConfig().MaxCurrentAmps = 25; vm.GetConfig().ValidateForController(BbsfwConnection.Controller.TSDZ2); }
+        catch (Exception e) { wrongControllerRejected = e.Message.Contains("Connected controller"); }
+        check(wrongControllerRejected, "writes validate against the actual connected controller");
+        var valid = new Configuration(BbsfwConnection.Controller.BBSHD)
+        {
+            MaxCurrentAmps = 25, MaxBatteryVolts = 48, LowCutoffVolts = 40, CurrentRampAmpsSecond = 10,
+            WheelSizeInch = 28, NumWheelSensorSignals = 1, PasStopDelayMilliseconds = 200,
+            PasKeepCurrentPercent = 60, ThrottleStartMillivolts = 1000, ThrottleEndMillivolts = 3600,
+            ShiftInterruptDuration = 600
+        };
+        var safetyLevel = valid.StandardAssistLevels[1];
+        safetyLevel.Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.PasAdaptive;
+        safetyLevel.MaxCurrentPercent = 100; safetyLevel.TorqueAmplificationFactor = 12;
+        valid.ValidateForController(BbsfwConnection.Controller.BBSHD);
+        safetyLevel.TorqueAmplificationFactor = 12.1f;
+        bool excessRejected = false;
+        try { valid.Validate(); } catch (Exception e) { excessRejected = e.Message.Contains("ceiling"); }
+        check(excessRejected, "configuration validation rejects manually injected budgets above current times voltage");
+        vm.MaxCurrentAmps = 25; vm.MaxBatteryVolts = 48;
+        foreach (var entry in vm.StandardAssistLevels.Concat(vm.SportAssistLevels))
+        {
+            entry.SelectedType = entry.AssistBaseTypeOptions.First(x => x.Value == AssistLevelViewModel.AssistBaseType.Pas);
+            entry.TargetCurrentPercent = 100;
+            entry.SelectedPasVariant = entry.AssistPasVariantOptions.First(x => x.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
+            entry.AdaptivePowerWatts = 1000;
+        }
+        vm.MaxCurrentAmps = 5;
+        check(vm.StandardAssistLevels.Concat(vm.SportAssistLevels).All(x => x.AdaptivePowerWatts == 240),
+            "global current reduction bounds every Standard and Sport level");
         level.SelectedPasVariant = level.AssistPasVariantOptions.First(x => x.Value == AssistLevelViewModel.AssistPasVariant.Cadence);
         check(!level.IsPasAssistAdaptiveVariant && level.TorqueAmplificationFactor == 0, "leaving Adaptive Power clears its variant and shared parameter");
         for (uint watts = 10; watts <= 2550; watts += 10)

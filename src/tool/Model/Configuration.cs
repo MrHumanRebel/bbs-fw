@@ -160,6 +160,29 @@ namespace BBSFW.Model
 			}
 		}
 
+        public uint GetAdaptivePowerLimitWatts(AssistLevel level)
+        {
+            if (!float.IsFinite(MaxBatteryVolts) || MaxBatteryVolts <= 0 || MaxBatteryVolts > 100) return 0;
+            // Match the voltage cents actually serialized on the wire. Always round power down.
+            uint voltageCents = (uint)(MaxBatteryVolts * 100f);
+            double steps = (double)voltageCents * Math.Min(MaxCurrentAmps, MaxCurrentLimitAmps) *
+                Math.Min(level.MaxCurrentPercent, 100u) / 100000d;
+            return (uint)Math.Min(255, Math.Floor(steps)) * 10;
+        }
+
+        public void ValidateForController(BbsfwConnection.Controller controller)
+        {
+            uint limit = controller switch
+            {
+                BbsfwConnection.Controller.BBSHD => 33,
+                BbsfwConnection.Controller.BBS02 => 30,
+                BbsfwConnection.Controller.TSDZ2 => 20,
+                _ => throw new Exception("Read the connected controller before writing configuration.")
+            };
+            ValidateLimits(MaxCurrentAmps, 5, limit, "Connected controller Max Current (A)");
+            Validate();
+        }
+
 		// hmi
 		[XmlIgnore]
 		public bool UseFreedomUnits;
@@ -873,10 +896,14 @@ namespace BBSFW.Model
 			ValidateLimits(MaxCurrentAmps, 5, MaxCurrentLimitAmps, "Max Current (A)");
 			ValidateLimits(CurrentRampAmpsSecond, 1, 255, "Current Ramp (A/s)");
             ValidateLimits(CurrentRampSmoothnessPercent, 0, 100, "Ramp Smoothness (%)");
-			ValidateLimits((uint)MaxBatteryVolts, 1, 100, "Max Battery Voltage (V)");
+            if (!float.IsFinite(MaxBatteryVolts) || MaxBatteryVolts < 1 || MaxBatteryVolts > 100)
+                throw new Exception("Max Battery Voltage (V) must be finite and in interval 1-100.");
+            if ((uint)(MaxBatteryVolts * 100f) <= LowCutoffVolts * 100ul + 100ul)
+                throw new Exception("Max Battery Voltage must be more than 1 V above Low Voltage Cut Off.");
 			ValidateLimits(LowCutoffVolts, 1, 100, "Low Voltage Cut Off (V)");
 
-			ValidateLimits((uint)WheelSizeInch, 10, 40, "Wheel Size (inch)");
+            if (!float.IsFinite(WheelSizeInch) || WheelSizeInch < 10 || WheelSizeInch > 40)
+                throw new Exception("Wheel Size (inch) must be finite and in interval 10-40.");
 			ValidateLimits(NumWheelSensorSignals, 1, 10, "Wheel Sensor Signals");
 			ValidateLimits(MaxSpeedKph, 0, 180, "Max Speed (km/h)");
 			ValidateLimits(PretensionSpeedCutoffKph, 0, 100, "Pretension Speed Cutoff (km/h)");
@@ -888,6 +915,8 @@ namespace BBSFW.Model
 
 			ValidateLimits(ThrottleStartMillivolts, 200, 2500, "Throttle Start (mV)");
 			ValidateLimits(ThrottleEndMillivolts, 2500, 5000, "Throttle End (mV)");
+            if (ThrottleStartMillivolts >= ThrottleEndMillivolts)
+                throw new Exception("Throttle End must be greater than Throttle Start.");
 			ValidateLimits(ThrottleStartPercent, 0, 100, "Throttle Start (%)");
 			ValidateLimits(ThrottleGlobalSpeedLimitPercent, 0, 100, "Throttle Global Speed Limit (%)");
 
@@ -920,6 +949,9 @@ namespace BBSFW.Model
             if (level.Type.HasFlag(AssistFlagsType.PasAdaptive))
             {
                 if (!IsAdaptiveLevelValid(level)) throw new Exception(name + ": Adaptive Power requires PAS, a 10–2550 W budget in 10 W steps, and no other PAS variant.");
+                uint maximum = GetAdaptivePowerLimitWatts(level);
+                if (Math.Round(level.TorqueAmplificationFactor * 100f) > maximum)
+                    throw new Exception(name + $": PAS budget exceeds the configured current/voltage ceiling ({maximum} W). Reduce the budget or choose Motor Disabled when the ceiling is below 10 W.");
             }
             else
                 ValidateLimits((uint)level.TorqueAmplificationFactor, 0, 25, name + ": Torque Amplification");

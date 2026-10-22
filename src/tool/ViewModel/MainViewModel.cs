@@ -208,6 +208,12 @@ namespace BBSFW.ViewModel
             // Write exactly the reviewed values, even if a setting changes while awaiting the response.
             var configuration = new Configuration();
             configuration.CopyFrom(ConfigVm.GetConfig());
+            try { configuration.ValidateForController(ConnectionVm.Controller); }
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message, "Validation Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
             long session = ConnectionVm.SessionId;
             string message = $"Write configuration to {ConnectionVm.Controller} (firmware {ConnectionVm.FirmwareVersion})?\n\n" +
                 $"Maximum current: {configuration.MaxCurrentAmps} A\n" +

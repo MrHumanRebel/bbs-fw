@@ -8,6 +8,15 @@
 #ifndef _FWCONFIG_H_
 #define _FWCONFIG_H_
 
+// Existing configuration-tool ceilings; the configured current may be lower.
+#if defined(BBSHD)
+#define MAX_CONFIG_CURRENT_AMPS 33u
+#elif defined(BBS02)
+#define MAX_CONFIG_CURRENT_AMPS 30u
+#elif defined(TSDZ2)
+#define MAX_CONFIG_CURRENT_AMPS 20u
+#endif
+
 #if defined(BBSHD)
 	#define HAS_MOTOR_TEMP_SENSOR				1
 #else

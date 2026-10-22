@@ -134,7 +134,7 @@ int main(int argc, char **argv)
                     uint8_t actual = (random >> 24) % 101, expected = actual;
                     bool enabled = (random & 7u) != 0;
                     now += 5 + (random & 127u);
-                    apply_current_ramp_up(&actual, enabled);
+                    test_ramp_up(&actual, enabled);
                     reference_ramp_up(&expected, enabled);
                     assert(actual == expected);
                 }
@@ -146,31 +146,31 @@ int main(int argc, char **argv)
         g_config.current_ramp_smoothness_percent = 100;
         uint8_t value = 0, previous = 0;
         now = UINT32_MAX - 400u;
-        apply_current_ramp_up(&value, false);
+        test_ramp_up(&value, false);
         for (unsigned step = 1; step <= 100; ++step)
         {
             now += 5; value = step;
-            apply_current_ramp_up(&value, true);
+            test_ramp_up(&value, true);
             assert(value >= previous && value <= step);
             previous = value;
         }
         assert(value >= 9); /* A changing target cannot restart the curve forever. */
-        now += 2500; value = 100; apply_current_ramp_up(&value, true); assert(value == 100);
-        value = 0; apply_current_ramp_up(&value, true); assert(value == 0);
+        now += 2500; value = 100; test_ramp_up(&value, true); assert(value == 100);
+        value = 0; test_ramp_up(&value, true); assert(value == 0);
         for (unsigned step = 0; step < 200; ++step)
         {
             now += 5; value = 20 + (step & 1u);
-            apply_current_ramp_up(&value, true);
+            test_ramp_up(&value, true);
             assert(value <= 20 + (step & 1u));
         }
         assert(value >= 19); /* Alternating targets above output must not restart the curve either. */
-        value = 0; apply_current_ramp_up(&value, false);
-        now += 5; value = 100; apply_current_ramp_up(&value, true);
-        now += 2500; value = 20; apply_current_ramp_up(&value, true); assert(value == 20);
+        value = 0; test_ramp_up(&value, false);
+        now += 5; value = 100; test_ramp_up(&value, true);
+        now += 2500; value = 20; test_ramp_up(&value, true); assert(value == 20);
         motor_current = 20;
         g_config.assist_levels[0][2] = g_config.assist_levels[0][1];
         app_set_assist_level(2);
-        now += 5; value = 100; apply_current_ramp_up(&value, true);
+        now += 5; value = 100; test_ramp_up(&value, true);
         assert(value == 20); /* A level change cannot expose a hidden, already-finished envelope. */
     }
     else if (!strcmp(argv[1], "walk"))

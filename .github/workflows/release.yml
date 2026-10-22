@@ -71,6 +71,7 @@ jobs:
         run: |
           make -C src/firmware clean
           make -C src/firmware -j1 all TARGET_CONTROLLER="$CONTROLLER" VERSION="$VERSION"
+          python3 ci/check_firmware_size.py "$CONTROLLER" src/firmware
           mkdir -p dist
           cp src/firmware/bbs-fw.hex "dist/bbs-fw-v$VERSION-$CONTROLLER.hex"
           python3 -c 'import sys; from pathlib import Path; from ci.validate_release import validate_hex; validate_hex(Path(sys.argv[1]))' "dist/bbs-fw-v$VERSION-$CONTROLLER.hex"

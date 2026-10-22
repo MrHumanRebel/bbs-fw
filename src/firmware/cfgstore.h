@@ -12,6 +12,7 @@
 #include "intellisense.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "memory.h"
 
 #define ASSIST_FLAG_PAS					0x01
 #define ASSIST_FLAG_THROTTLE			0x02
@@ -149,6 +150,10 @@ typedef struct
 
 extern config_t g_config;
 extern pstate_t g_pstate;
+
+// A power budget is encoded in 10 W steps and never exceeds the configured envelope.
+uint8_t config_power_budget_steps(const config_t RAM_XDATA* config, const assist_level_t RAM_XDATA* level) RAM_REENTRANT;
+bool config_is_valid(const config_t RAM_XDATA* config) RAM_REENTRANT;
 
 void cfgstore_init();
 

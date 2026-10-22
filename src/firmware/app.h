@@ -12,6 +12,7 @@
 #include "intellisense.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "memory.h"
 
 
 #define ASSIST_0		0x00
@@ -54,13 +55,18 @@
 #define STATUS_ERROR_COMMUNICATION			0x30 // n/a
 
 
-void app_init();
+void app_init() RAM_REENTRANT;
 
 void app_process();
+
+// Configuration changes require a restart before the motor may run again.
+void app_configuration_changed();
 
 // Volatile bench controls; positive throttle requires a prior zero command.
 bool app_virtual_control(uint8_t enable, uint8_t level, uint8_t throttle);
 uint8_t app_virtual_throttle();
+
+uint16_t convert_wheel_speed_kph_to_rpm(uint8_t speed_kph);
 
 void app_set_assist_level(uint8_t level);
 void app_set_lights(bool on);

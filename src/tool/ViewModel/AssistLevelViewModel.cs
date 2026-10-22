@@ -236,12 +236,26 @@ namespace BBSFW.ViewModel
 
         public bool IsPasAssistAdaptiveVariant => _level.Type.HasFlag(Configuration.AssistFlagsType.PasAdaptive);
 
+        public uint AdaptivePowerLimitWatts => _configVm.GetConfig().GetAdaptivePowerLimitWatts(_level);
+        public string AdaptivePowerLimitText => $"Configured ceiling: {AdaptivePowerLimitWatts} W (10 W steps), based on full-charge voltage and this level's current ceiling.";
+
+        internal void RefreshPowerLimit(bool clamp)
+        {
+            OnPropertyChanged(nameof(AdaptivePowerLimitWatts));
+            OnPropertyChanged(nameof(AdaptivePowerLimitText));
+            if (clamp && IsPasAssistAdaptiveVariant)
+            {
+                if (AdaptivePowerWatts > AdaptivePowerLimitWatts) AdaptivePowerWatts = AdaptivePowerLimitWatts;
+                else if (AdaptivePowerWatts == 0 && AdaptivePowerLimitWatts >= 10) AdaptivePowerWatts = 250;
+            }
+        }
+
         public uint AdaptivePowerWatts
         {
             get => (uint)Math.Round(_level.TorqueAmplificationFactor * 100f);
             set
             {
-                uint rounded = (uint)Math.Clamp(Math.Round(value / 10d) * 10, 10, 2550);
+                uint rounded = Math.Min(Math.Max(value / 10u * 10u, 10u), AdaptivePowerLimitWatts);
                 _level.TorqueAmplificationFactor = rounded / 100f;
                 OnPropertyChanged(nameof(AdaptivePowerWatts));
                 OnPropertyChanged(nameof(TorqueAmplificationFactor));
@@ -257,6 +271,7 @@ namespace BBSFW.ViewModel
 				{
 					_level.MaxCurrentPercent = value;
 					OnPropertyChanged(nameof(TargetCurrentPercent));
+                    RefreshPowerLimit(true);
 				}
 			}
 		}

@@ -12,6 +12,8 @@ for target in BBS02 BBSHD TSDZ2; do
 	cc -std=c99 -D"$target" -ffunction-sections -fdata-sections -I src/firmware \
 		tests/virtual_display_test.c -Wl,--gc-sections -lm -o "$test_dir/virtual"
 	"$test_dir/virtual"
+    cc -std=c99 -ffp-contract=off -D"$target" -I src/firmware tests/wheel_conversion_test.c -o "$test_dir/wheel"
+    "$test_dir/wheel"
 	cc -std=c99 -D"$target" -I src/firmware tests/cfgstore_migration_test.c -o "$test_dir/config"
 	"$test_dir/config"
 	cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
@@ -22,6 +24,16 @@ for target in BBS02 BBSHD TSDZ2; do
     for test in brake speed thermal lvc walk walk_release_immediate walk_release_wait_stop walk_release_throttle walk_release_wrap walk_release_cruise; do
         "$test_dir/voltage" "$test" curved
     done
+    cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
+        -I src/firmware tests/safety_limits_test.c -o "$test_dir/safety"
+    "$test_dir/safety" thermal_curve legacy
+    "$test_dir/safety" zero_pas legacy
+    for mode in legacy adaptive adaptive_pas variable cruise throttle walk; do
+        for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" "$mode"; done
+    done
+    if [ "$target" = TSDZ2 ]; then
+        for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" torque; done
+    fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/adaptive_power_test.c -o "$test_dir/adaptive"
     for scenario in budget voltage coast compensation throttle profiles legacy_ramp moving_ramp walk brake speed thermal lvc; do

@@ -139,6 +139,7 @@ namespace BBSFW.ViewModel
 				{
 					_config.MaxCurrentAmps = value;
 					OnPropertyChanged(nameof(MaxCurrentAmps));
+                    RefreshPowerLimits(true);
                     OnPropertyChanged(nameof(CurrentRiseSeconds));
 				}
 			}
@@ -183,6 +184,7 @@ namespace BBSFW.ViewModel
 				{
 					_config.MaxBatteryVolts = value;
 					OnPropertyChanged(nameof(MaxBatteryVolts));
+                    RefreshPowerLimits(true);
 				}
 			}
 		}
@@ -643,6 +645,11 @@ namespace BBSFW.ViewModel
 			return (uint)Math.Round(mph * 1.609344);
 		}
 
+        private void RefreshPowerLimits(bool clamp)
+        {
+            foreach (var level in StandardAssistLevels.Concat(SportAssistLevels)) level.RefreshPowerLimit(clamp);
+        }
+
 		private void TriggerPropertyChanges()
 		{
 			foreach (var prop in typeof(ConfigurationViewModel).GetProperties())
@@ -653,6 +660,7 @@ namespace BBSFW.ViewModel
 				}
 			}
 
+            RefreshPowerLimits(false);
 			// force update by creating new list
 			StandardAssistLevels = StandardAssistLevels.ToList();
 			SportAssistLevels = SportAssistLevels.ToList();
