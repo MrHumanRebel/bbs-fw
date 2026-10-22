@@ -21,6 +21,8 @@
 #define ASSIST_FLAG_OVERRIDE_CADENCE	0x20	// pas option where max cadence is set to 100% when throttle overrides pas
 #define ASSIST_FLAG_OVERRIDE_SPEED		0x40	// pas option where max speed is set to 100% when throttle overrides pas
 #define ASSIST_FLAG_VOLTAGE_COMPENSATION	0x80	// compensate PAS within assist current limit
+// Version 7 reuses the retired per-level voltage-compensation bit.
+#define ASSIST_FLAG_PAS_ADAPTIVE          0x80
 
 #define ASSIST_MODE_SELECT_OFF			0x00
 #define ASSIST_MODE_SELECT_STANDARD		0x01
@@ -55,7 +57,7 @@
 #define LIGHTS_MODE_ALWAYS_ON			2
 #define LIGHTS_MODE_BRAKE_LIGHT			3
 
-#define CONFIG_VERSION					6
+#define CONFIG_VERSION					7
 #define PSTATE_VERSION					1
 
 
@@ -68,6 +70,7 @@ typedef struct
 	uint8_t max_speed_percent;
 
 	// 10 => 1.0: 100w human power gives and additional 100w motor power
+    // Adaptive Power instead interprets this byte as its PAS budget in 10 W steps.
 	uint8_t torque_amplification_factor_x10;
 }  assist_level_t;
 
@@ -132,6 +135,10 @@ typedef struct
 	uint8_t current_ramp_smoothness_percent;
 
 } config_t;
+
+// Reusing a variant byte must not grow RAM, EEPROM pages or UART frames.
+typedef char config_wire_size_must_stay_156[(sizeof(config_t) == 156) ? 1 : -1];
+typedef char assist_wire_size_must_stay_6[(sizeof(assist_level_t) == 6) ? 1 : -1];
 
 typedef struct
 {

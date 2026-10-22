@@ -120,3 +120,19 @@ exercise rejection through the real configuration/reset/calibration commands,
 using an injected rejecting confirmation without opening a serial port.
 
 See [scope, hardware review and build measurements](../doc/connection-actions-and-safe-optimization.md).
+
+## Adaptive Power PAS and schema 7
+
+`sh tests/run.sh` also runs `adaptive_power_test.c` for every controller target.
+It tests the cadence-based watt envelope, current ceilings, invalid/sagging/
+recovering battery voltage, global-compensation independence, all Standard/Sport
+levels, throttle override, zero-demand coast and the existing safety interlocks.
+It compares non-adaptive ramp outputs with the frozen previous implementation
+and tests moving adaptive targets across clock wrap. Configuration and command
+frame sizes remain 156 and 161 bytes.
+
+Portable .NET checks exercise schema-7 binary/XML round trips, exact encoding of
+all 255 budgets, schema-5/6 migration and rejection of ambiguous flag combinations
+or unrepresentable budgets. Windows tests render Adaptive Power and verify the
+watt input and preview bindings in both themes at all three viewport sizes.
+See [the algorithm, memory measurements and research limitations](../doc/adaptive-power-pas.md).

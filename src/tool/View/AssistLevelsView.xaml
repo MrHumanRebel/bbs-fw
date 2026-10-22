@@ -144,7 +144,17 @@
 
 			</Grid>
 
-			</Border><Border Style="{StaticResource Card}"><Grid>
+			</Border><Border>
+            <Border.Style><Style TargetType="Border" BasedOn="{StaticResource Card}"><Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers><DataTrigger Binding="{Binding SelectedAssistLevel.IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+            </Style></Border.Style>
+            <StackPanel>
+                <TextBlock Text="Adaptive Power" FontSize="18" FontWeight="SemiBold"/>
+                <TextBlock Text="A PAS power budget for this level. Low cadence reduces demand; the full budget is available from 60 rpm. Shift down if cadence falls under load." TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,10,0,6"/>
+                <ns2:ResponseChart Mode="Adaptive" BudgetPower="{Binding SelectedAssistLevel.AdaptivePowerWatts}" Focusable="False" ToolTip="Requested electrical PAS power versus cadence, before current and safety limits. Actual motor output may be lower."/>
+                <TextBlock Text="Current, speed, cadence and hardware protections still apply. Throttle keeps its own current limit. The system voltage-compensation toggle does not add a second boost to this power-based variant." TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
+            </StackPanel>
+        </Border><Border Style="{StaticResource Card}"><Grid>
 				<Grid.ColumnDefinitions>
 					<ColumnDefinition Width="Auto"/>
 					<ColumnDefinition Width="*"/>

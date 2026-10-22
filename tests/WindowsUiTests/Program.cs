@@ -83,6 +83,9 @@ internal static class Program
         vm.ConfigVm.PasKeepCurrentCadenceRpm = 40;
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
+        var adaptiveLevel = vm.ConfigVm.StandardAssistLevels[1];
+        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
+        adaptiveLevel.AdaptivePowerWatts = 250;
         var tabs = (TabControl)window.FindName("WorkspaceTabs");
         // Hosted Windows desktops cap top-level HWNDs near 1024x768. Exercise
         // the actual WPF content offscreen at exact logical viewport sizes.
@@ -145,6 +148,16 @@ internal static class Program
                                 "quick actions stay within the window");
                             Check(actions.All(b => Bounds((FrameworkElement)b.Content, b).Width <= b.ActualWidth - b.Padding.Left - b.Padding.Right + 1),
                                 "quick action icons and labels fit inside buttons");
+                        }
+                        if (index == 3)
+                        {
+                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "AdaptivePowerBudget");
+                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Power exposes a per-level watt budget");
+                            var preview = descendants.OfType<ResponseChart>().First(c => c.Mode == "Adaptive");
+                            Check(preview.BudgetPower == adaptiveLevel.AdaptivePowerWatts, "adaptive preview binds to the selected level budget");
+                            adaptiveLevel.AdaptivePowerWatts = 350; Pump();
+                            Check(preview.BudgetPower == 350, "adaptive watt edits update the native preview");
+                            adaptiveLevel.AdaptivePowerWatts = 250;
                         }
                         if (index == 2)
                         {

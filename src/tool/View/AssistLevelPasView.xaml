@@ -46,6 +46,18 @@
 			</TextBox.Style>
 		</TextBox>
 		
+        <TextBlock Grid.Column="0" Grid.Row="1" Text="PAS budget (W):" VerticalAlignment="Center" Margin="0,8,0,0" TextWrapping="Wrap">
+            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers><DataTrigger Binding="{Binding IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+            </Style></TextBlock.Style>
+        </TextBlock>
+        <TextBox Grid.Column="1" Grid.Row="1" Margin="10,8,0,0" Text="{Binding AdaptivePowerWatts, UpdateSourceTrigger=LostFocus}"
+                 AutomationProperties.AutomationId="AdaptivePowerBudget" ToolTip="10–2550 W, in 10 W steps. PAS budget; throttle keeps its own current limit.">
+            <TextBox.Style><Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}"><Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers><DataTrigger Binding="{Binding IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+            </Style></TextBox.Style>
+        </TextBox>
+
 		<TextBlock Grid.Column="0" Grid.Row="2" Text="Max Current (%):" VerticalAlignment="Center" Margin="0 8 0 0"/>
 		<TextBox Grid.Column="1" Grid.Row="2" Margin="10 8 0 0" Text="{Binding TargetCurrentPercent, UpdateSourceTrigger=PropertyChanged}"/>
 

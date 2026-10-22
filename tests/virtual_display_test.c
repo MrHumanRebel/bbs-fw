@@ -102,5 +102,26 @@ int main(void)
 	rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
 	assert(config_saves == 2 && g_config.max_current_amps == 27 && tx_count == 0);
 	puts("161-byte config buffer, pipelining, fragmentation, corrupt write rejection: PASS");
+    now += DISCARD_TIMEOUT_MS + 1u;
+    memcpy(rx + 4, &g_config, sizeof g_config);
+    rx[2] = CONFIG_VERSION;
+    rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE;
+    rx[4 + 34 + 6 + 5] = 25;
+    rx[160] = compute_checksum(rx, 160);
+    rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
+    assert(config_saves == 3 && tx_count == 4 && tx[2] == 1);
+    assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
+    for (unsigned invalid = 0; invalid < 3; ++invalid)
+    {
+        rx[2] = invalid == 2 ? 6 : CONFIG_VERSION;
+        rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE | (invalid == 1 ? ASSIST_FLAG_PAS_TORQUE : 0);
+        rx[4 + 34 + 6 + 5] = invalid == 0 ? 0 : 25;
+        rx[160] = compute_checksum(rx, 160);
+        rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
+        assert(config_saves == 3 && tx_count == 4 && tx[2] == 0);
+        assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE));
+        assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
+    }
+    puts("v7 adaptive write, invalid budget/variant and old-version write rejection: PASS");
 	return 0;
 }

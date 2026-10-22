@@ -1,5 +1,6 @@
 using BBSFW.Model;
 using BBSFW.ViewModel.Base;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -23,7 +24,8 @@ namespace BBSFW.ViewModel
 		{
 			Cadence,
 			Torque,
-			Variable
+			Variable,
+            AdaptivePower
 		}
 
 
@@ -51,6 +53,7 @@ namespace BBSFW.ViewModel
 				}
 
 				variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.Variable, "Variable"));
+                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptivePower, "Adaptive Power"));
 
 				return variants;
 			}
@@ -91,8 +94,14 @@ namespace BBSFW.ViewModel
 			{
 				if (value.Value != SelectedType.Value)
 				{
+                    if (IsPasAssistAdaptiveVariant && value.Value != AssistBaseType.Pas)
+                    {
+                        _level.Type &= ~Configuration.AssistFlagsType.PasAdaptive;
+                        TorqueAmplificationFactor = 0;
+                    }
 					_level.Type = ApplyBaseTypeFlag(value.Value, _level.Type);
 					OnPropertyChanged(nameof(SelectedType));
+                    OnPropertyChanged(nameof(IsPasAssistAdaptiveVariant));
 
 					switch (value.Value)
 					{
@@ -128,7 +137,11 @@ namespace BBSFW.ViewModel
 			get
 			{
 				var variant = AssistPasVariant.Cadence;
-				if (_level.Type.HasFlag(Configuration.AssistFlagsType.PasTorque))
+                if (IsPasAssistAdaptiveVariant)
+                {
+                    variant = AssistPasVariant.AdaptivePower;
+                }
+                else if (_level.Type.HasFlag(Configuration.AssistFlagsType.PasTorque))
 				{
 					variant = AssistPasVariant.Torque;
 				}
@@ -143,13 +156,18 @@ namespace BBSFW.ViewModel
 			{
 				if (value.Value != SelectedPasVariant.Value)
 				{
+                    if (IsPasAssistAdaptiveVariant) TorqueAmplificationFactor = 0;
 					_level.Type = ApplyPasVariantFlag(value.Value, _level.Type);
 					OnPropertyChanged(nameof(SelectedPasVariant));
 					OnPropertyChanged(nameof(IsPasAssistVariableVariant));
 					OnPropertyChanged(nameof(IsPasAssistTorqueVariant));
+                    OnPropertyChanged(nameof(IsPasAssistAdaptiveVariant));
 
 					switch(value.Value)
 					{
+                        case AssistPasVariant.AdaptivePower:
+                            AdaptivePowerWatts = 250;
+                            break;
 						case AssistPasVariant.Variable:
 							TorqueAmplificationFactor = 0;
 							IsThrottleEnabled = false;
@@ -215,6 +233,20 @@ namespace BBSFW.ViewModel
 		}
 
 
+
+        public bool IsPasAssistAdaptiveVariant => _level.Type.HasFlag(Configuration.AssistFlagsType.PasAdaptive);
+
+        public uint AdaptivePowerWatts
+        {
+            get => (uint)Math.Round(_level.TorqueAmplificationFactor * 100f);
+            set
+            {
+                uint rounded = (uint)Math.Clamp(Math.Round(value / 10d) * 10, 10, 2550);
+                _level.TorqueAmplificationFactor = rounded / 100f;
+                OnPropertyChanged(nameof(AdaptivePowerWatts));
+                OnPropertyChanged(nameof(TorqueAmplificationFactor));
+            }
+        }
 
 		public uint TargetCurrentPercent
 		{
@@ -315,7 +347,7 @@ namespace BBSFW.ViewModel
 		private static Configuration.AssistFlagsType ClearPasVariantFlag(Configuration.AssistFlagsType flags)
 		{
 			byte f = (byte)flags;
-			f &= (byte)~(Configuration.AssistFlagsType.PasTorque | Configuration.AssistFlagsType.PasVariable);
+			f &= (byte)~(Configuration.AssistFlagsType.PasTorque | Configuration.AssistFlagsType.PasVariable | Configuration.AssistFlagsType.PasAdaptive);
 
 			return (Configuration.AssistFlagsType)f;
 		}
@@ -325,6 +357,9 @@ namespace BBSFW.ViewModel
 			var result = ClearPasVariantFlag(flags);
 			switch (pasVariant)
 			{
+                case AssistPasVariant.AdaptivePower:
+                    result |= Configuration.AssistFlagsType.PasAdaptive;
+                    break;
 				case AssistPasVariant.Torque:
 					result |= Configuration.AssistFlagsType.PasTorque;
 					break;

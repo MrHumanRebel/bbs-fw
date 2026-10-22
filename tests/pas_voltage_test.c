@@ -10,7 +10,7 @@
 
 config_t g_config;
 static uint32_t now;
-static uint16_t voltage = 480, wheel_speed;
+static uint16_t voltage = 480, wheel_speed, pedal_cadence = MAX_CADENCE_RPM_X10;
 static uint8_t motor_current, motor_cadence, throttle;
 static bool pedaling = true, backwards, brake, shift;
 static int16_t temperature;
@@ -31,7 +31,7 @@ uint8_t throttle_map_response(uint8_t value) { return value; }
 bool pas_is_pedaling_forwards(void) { return pedaling; }
 bool pas_is_pedaling_backwards(void) { return backwards; }
 uint16_t pas_get_pulse_counter(void) { return 100; }
-uint16_t pas_get_cadence_rpm_x10(void) { return MAX_CADENCE_RPM_X10; }
+uint16_t pas_get_cadence_rpm_x10(void) { return pedal_cadence; }
 uint16_t speed_sensor_get_rpm_x10(void) { return wheel_speed; }
 bool speed_sensor_is_moving(void) { return wheel_speed > 0; }
 uint16_t torque_sensor_get_nm_x100(void) { return 1000; }

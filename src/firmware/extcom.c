@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stddef.h>
 
 #define KEEP		0
 #define DISCARD		-1
@@ -30,7 +31,7 @@
 
 // Largest supported request is WRITE_CONFIG: header + payload + checksum.
 #define BUFFER_SIZE (sizeof(config_t) + 5u)
-#if CONFIG_VERSION != 6
+#if CONFIG_VERSION != 7
 #error Review maximum protocol request size when changing the configuration schema.
 #endif
 #define DISCARD_TIMEOUT_MS	50
@@ -504,8 +505,22 @@ static int16_t process_write_config()
 		if (version == CONFIG_VERSION && length == sizeof(config_t) &&
             msgbuf[4 + sizeof(config_t) - 2u] <= 1u && msgbuf[4 + sizeof(config_t) - 1u] <= 100u)
 		{
-			memcpy(&g_config, msgbuf + 4, sizeof(config_t));
-			result = cfgstore_save_config();
+            // Validate the reused variant byte before changing the live configuration.
+            result = true;
+            for (uint8_t index = 0; index < 20; ++index)
+            {
+                uint8_t flags = msgbuf[4u + offsetof(config_t, assist_levels) + index * sizeof(assist_level_t)];
+                if ((flags & ASSIST_FLAG_PAS_ADAPTIVE) &&
+                    (!(flags & ASSIST_FLAG_PAS) ||
+                    (flags & (ASSIST_FLAG_PAS_TORQUE | ASSIST_FLAG_PAS_VARIABLE | ASSIST_FLAG_CRUISE)) ||
+                    msgbuf[4u + offsetof(config_t, assist_levels) + index * sizeof(assist_level_t) + 5u] == 0))
+                    result = false;
+            }
+            if (result)
+            {
+                memcpy(&g_config, msgbuf + 4, sizeof(config_t));
+                result = cfgstore_save_config();
+            }
 		}
 
 		uint8_t checksum = 0;

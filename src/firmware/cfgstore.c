@@ -101,6 +101,18 @@ static bool read_config()
 	eventlog_write(EVT_MSG_CONFIG_READ_BEGIN);
 
 	uint8_t res = read(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t*)&g_config, sizeof(config_t));
+    if (res == EEPROM_ERROR_VERSION)
+    {
+        res = read(EEPROM_CONFIG_PAGE, 6, (uint8_t*)&g_config, sizeof(config_t));
+        if (res == EEPROM_OK)
+        {
+            // The retired v6 bit must never silently select the new PAS variant.
+            for (uint8_t mode = 0; mode < 2; ++mode)
+                for (uint8_t level = 0; level < 10; ++level)
+                    g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
+            write_config();
+        }
+    }
 	if (res == EEPROM_ERROR_VERSION)
 	{
 		res = read(EEPROM_CONFIG_PAGE, 5, (uint8_t*)&g_config, sizeof(config_t) - 2u);

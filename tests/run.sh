@@ -22,6 +22,12 @@ for target in BBS02 BBSHD TSDZ2; do
     for test in brake speed thermal lvc walk walk_release_immediate walk_release_wait_stop walk_release_throttle walk_release_wrap walk_release_cruise; do
         "$test_dir/voltage" "$test" curved
     done
+    cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
+        -I src/firmware tests/adaptive_power_test.c -o "$test_dir/adaptive"
+    for scenario in budget voltage coast compensation throttle profiles legacy_ramp moving_ramp walk brake speed thermal lvc; do
+        "$test_dir/adaptive" "$scenario"
+    done
+    if [ "$target" != TSDZ2 ]; then "$test_dir/adaptive" shift; fi
 	if [ "$target" = TSDZ2 ]; then
 		"$test_dir/voltage" torque
 	else
