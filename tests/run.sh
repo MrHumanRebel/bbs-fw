@@ -35,6 +35,17 @@ for target in BBS02 BBSHD TSDZ2; do
         for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" torque; done
     fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
+        -I src/firmware tests/protection_release_test.c -o "$test_dir/release"
+    for clear in unlimited thermal_cool speed_clear; do "$test_dir/release" "$clear" released; done
+    for protection in thermal speed lvc; do
+        for demand in released small; do "$test_dir/release" "$protection" "$demand"; done
+    done
+    if [ "$target" != TSDZ2 ]; then
+        "$test_dir/release" shift released
+        "$test_dir/release" shift small
+        "$test_dir/release" shift_wrap held
+    fi
+    cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/adaptive_power_test.c -o "$test_dir/adaptive"
     for scenario in budget voltage coast compensation throttle profiles legacy_ramp moving_ramp walk brake speed thermal lvc; do
         "$test_dir/adaptive" "$scenario"

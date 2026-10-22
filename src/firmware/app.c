@@ -133,10 +133,13 @@ static void apply_pas_torque(void);
 static void apply_pretension(void);
 static void apply_cruise(uint8_t throttle_percent);
 static bool apply_throttle(uint8_t throttle_percent);
+// Limiters report an active protection even when demand is already below its cap.
 static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool throttle_override);
 static bool apply_thermal_limit(void);
 static bool apply_low_voltage_limit(void);
+#if HAS_SHIFT_SENSOR_SUPPORT
 static bool apply_shift_sensor_interrupt(void);
+#endif
 static bool apply_brake(void);
 static void apply_current_ramp_up(bool enable) RAM_REENTRANT;
 static void apply_current_ramp_down(bool enable);
@@ -461,7 +464,9 @@ static void apply_pretension(void)
 {
     // A zero-current PAS level must not acquire an idle demand from pretension.
     if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && assist_level_data.level.target_current_percent == 0)
+    {
         return;
+    }
 
 	uint16_t current_speed_rpm_x10 = speed_sensor_get_rpm_x10();
 
@@ -782,8 +787,8 @@ static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool t
 				if (requested_current > tmp)
 				{
 					requested_current = tmp;
-					return true;
 				}
+				return true;
 			}
 		}
 	}
@@ -837,8 +842,8 @@ static bool apply_thermal_limit(void)
 		if (requested_current > tmp)
 		{
 			requested_current = tmp;
-			return true;
 		}
+		return true;
 	}
 	else
 	{
@@ -912,8 +917,8 @@ static bool apply_low_voltage_limit(void)
 		if (requested_current > tmp2)
 		{
 			requested_current = tmp2;
-			return true;
 		}
+		return true;
 	}
 
 	return false;
@@ -963,7 +968,7 @@ static bool apply_shift_sensor_interrupt(void)
 		return false;
 	}
 
-	if (system_ms() >= shift_sensor_act_ms)
+	if ((uint32_t)(system_ms() - shift_sensor_act_ms) < 0x80000000ul)
 	{
 		// Shift is finished, reset function state.
 		shift_sensor_interrupting = false;
@@ -990,7 +995,7 @@ static bool apply_shift_sensor_interrupt(void)
 		return true;
 	}
 
-	return false;
+	return g_config.shift_interrupt_current_threshold_percent < 100u;
 }
 #endif
 

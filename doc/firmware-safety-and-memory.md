@@ -45,8 +45,11 @@ Every normal demand source passes through the same final protections: cadence
 PAS, variable PAS, torque PAS where supported, Adaptive Power, cruise, physical
 or virtual throttle, and walk assist.
 
-- The normal falling-current ramp can no longer raise a thermal or LVC reduction.
-  Brake, speed, shift, power-block and virtual-control interlocks remain effective.
+- An active thermal, LVC, speed or shift envelope prevents the normal falling-current
+  ramp from restoring a previous higher output, including when input is released
+  or is already below the cap. The ordinary falling ramp remains active outside
+  protection regions. Brake, power-block and virtual-control interlocks remain effective.
+  Shift duration also remains correct across millisecond-counter wrap.
 - The existing 80–85 °C thermal ramp remains: 100% at 80 °C, down to 20% at 85 °C.
   **Above 85 °C the command becomes zero**, rather than remaining at 20% indefinitely.
   Limiting uses the full signed temperature reading; cached display temperatures
@@ -108,8 +111,8 @@ whose maximum intermediate product is 40000.
 
 | Target | Flash/CODE before / after | Static RAM before / after | Linker stack information before / after |
 | --- | --- | --- | --- |
-| BBS02 | Flash 25,805 / 25,762 bytes | XRAM 904 / 861 bytes | 150 / 157 bytes available |
-| BBSHD | Flash 27,361 / 27,318 bytes | XRAM 918 / 875 bytes | 138 / 145 bytes available |
+| BBS02 | Flash 25,805 / 25,772 bytes | XRAM 904 / 861 bytes | 150 / 156 bytes available |
+| BBSHD | Flash 27,361 / 27,328 bytes | XRAM 918 / 875 bytes | 138 / 144 bytes available |
 | TSDZ2 | Image 16,396 / 15,464; CODE 15,655 / 14,733 bytes | DATA 587 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
 
 Measurements use clean SDCC **4.5.0** builds, comparing the preceding Adaptive
