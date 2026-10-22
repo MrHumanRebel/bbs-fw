@@ -100,11 +100,12 @@ On Windows, run:
 dotnet run --project tests/WindowsUiTests --configuration Release -- ui-preview
 ```
 
-This opens a disconnected application, checks all
+This renders the disconnected application offscreen at exact viewport sizes, checks all
 six pages at 1000×650, 1280×720 and 1920×1080 in both themes, and writes PNG
 screenshots. It checks workspace stretch, nonoverlapping cards, the wide System
 layout without scrollbars, text colors, the connection toolbar and two-way curve
 bindings. It neither connects to a controller nor arms bench controls. The
 `Windows UI validation` workflow runs this suite on pull requests and uploads
-`windows-ui-preview`. Screenshot dimensions are WPF logical pixels; physical
+`windows-ui-preview`. The runner desktop can be smaller than the tested viewport; offscreen layout
+avoids the top-level HWND size cap. Screenshot dimensions are WPF logical pixels; physical
 multi-monitor DPI behavior still needs a manual Windows check.

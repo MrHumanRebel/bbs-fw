@@ -14,7 +14,7 @@
 		<vm:MainViewModel />
 	</Window.DataContext>
 
-	<Grid>
+	<Grid Background="{DynamicResource CanvasBrush}">
 
 		<Grid.RowDefinitions>
 			<RowDefinition Height="Auto" />

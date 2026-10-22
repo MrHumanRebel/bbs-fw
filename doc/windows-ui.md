@@ -40,7 +40,8 @@ of indiscriminate trimming, so trimming is not enabled.
 
 Cross-publish on Linux with Windows targeting enabled checks XAML and C#
 compilation. Host tests check configuration migration and curve arithmetic.
-The Windows-only layout suite renders all six pages in both palettes at three
+The Windows-only layout suite renders the actual WPF content offscreen, avoiding
+CI desktop window-size caps. It covers all six pages in both palettes at three
 window sizes and uploads preview screenshots through `windows-ui.yml`.
 
 Interactive appearance, physical multi-monitor DPI behavior, saved-theme

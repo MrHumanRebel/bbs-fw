@@ -122,7 +122,7 @@
                                 <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource {x:Type TextBox}}">
                                     <Setter Property="IsEnabled" Value="True"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ConfigVm.ThrottleGlobalSpeedLimitOpt.Value}" Value="Disabled">
+                                        <DataTrigger Binding="{Binding ConfigVm.ThrottleGlobalSpeedLimit.Value}" Value="Disabled">
                                             <Setter Property="IsEnabled" Value="False"/>
                                         </DataTrigger>
                                     </Style.Triggers>

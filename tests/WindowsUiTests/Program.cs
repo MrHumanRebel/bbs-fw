@@ -38,9 +38,8 @@ internal static class Program
     }
     private static Rect Bounds(FrameworkElement element, Visual root) =>
         element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
-    private static void Screenshot(Window window, string path)
+    private static void Screenshot(FrameworkElement content, string path)
     {
-        var content = (FrameworkElement)window.Content;
         var bitmap = new RenderTargetBitmap(Math.Max(1, (int)content.ActualWidth), Math.Max(1, (int)content.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(content);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
@@ -76,18 +75,32 @@ internal static class Program
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
         var tabs = (TabControl)window.FindName("WorkspaceTabs");
+        // Hosted Windows desktops cap top-level HWNDs near 1024x768. Exercise
+        // the actual WPF content offscreen at exact logical viewport sizes.
+        var surface = (FrameworkElement)window.Content;
+        window.Content = null;
+        surface.DataContext = vm;
+        surface.SetResourceReference(TextElement.ForegroundProperty, "TextBrush");
+        surface.SetValue(TextElement.FontFamilyProperty, window.FontFamily);
+        surface.SetValue(TextElement.FontSizeProperty, window.FontSize);
+        void Layout(Size size)
+        {
+            surface.Measure(size);
+            surface.Arrange(new Rect(size));
+            surface.UpdateLayout();
+        }
         try
         {
-            window.Show();
             foreach (bool dark in new[] { true, false })
             {
                 theme.GetMethod("Apply", BindingFlags.Static | BindingFlags.Public).Invoke(null, new object[] { dark, false });
                 foreach (var size in new[] { new Size(1000, 650), new Size(1280, 720), new Size(1920, 1080) })
                 {
-                    window.Width = size.Width; window.Height = size.Height;
+                    Layout(size);
                     for (int index = 0; index < tabs.Items.Count; ++index)
                     {
-                        tabs.SelectedIndex = index; window.UpdateLayout(); Pump();
+                        tabs.SelectedIndex = index; Layout(size); Pump(); Layout(size);
+                        foreach (var plot in Descendants(surface).OfType<ResponseChart>()) plot.InvalidateVisual();
                         var presenter = (FrameworkElement)tabs.Template.FindName("PART_SelectedContentHost", tabs);
                         Check(presenter.ActualWidth > tabs.ActualWidth - 220, $"{size}/{dark}/tab {index}: content uses workspace width");
                         var descendants = Descendants(presenter).OfType<FrameworkElement>().ToArray();
@@ -100,18 +113,27 @@ internal static class Program
                             var viewport = descendants.OfType<ScrollViewer>().First(s => s.Content == panel);
                             Check(viewport.ComputedHorizontalScrollBarVisibility != Visibility.Visible, "system has no horizontal scrollbar");
                             if (size.Width == 1920)
-                                Check(viewport.ExtentHeight <= viewport.ViewportHeight + 1, "wide viewport fits all system cards without scrolling");
+                                Check(viewport.ExtentHeight <= viewport.ViewportHeight + 1, $"wide cards fit: extent {viewport.ExtentHeight:0}, viewport {viewport.ViewportHeight:0}, width {panel.ActualWidth:0}");
                         }
                         if (index == 0)
                         {
                             var header = descendants.OfType<TextBlock>().First(t => t.Text == "Available controllers");
                             var refresh = descendants.OfType<Button>().First(b => Equals(b.Content, "Refresh"));
-                            Check(!Bounds(header, window).IntersectsWith(Bounds(refresh, window)), "connection heading does not overlap Refresh");
+                            Check(!Bounds(header, surface).IntersectsWith(Bounds(refresh, surface)), "connection heading does not overlap Refresh");
                         }
                         if (index == 2)
                         {
                             var label = descendants.OfType<TextBlock>().First(t => t.Text == "Max Current (A):");
                             Check(label.Foreground == app.FindResource("TextBrush"), "navigation accent does not leak into form text");
+                            var limit = descendants.OfType<TextBox>().First(b =>
+                                System.Windows.Data.BindingOperations.GetBinding(b, TextBox.TextProperty)?.Path?.Path == "ConfigVm.ThrottleGlobalSpeedLimitPercent");
+                            vm.ConfigVm.ThrottleGlobalSpeedLimit = ConfigurationViewModel.ThrottleGlobalSpeedLimitOptions[0];
+                            Pump();
+                            Check(!limit.IsEnabled, "disabled global throttle limit disables its percentage input");
+                            vm.ConfigVm.ThrottleGlobalSpeedLimit = ConfigurationViewModel.ThrottleGlobalSpeedLimitOptions[1];
+                            Pump();
+                            Check(limit.IsEnabled, "enabling global throttle limit enables its percentage input");
+                            vm.ConfigVm.ThrottleGlobalSpeedLimit = ConfigurationViewModel.ThrottleGlobalSpeedLimitOptions[0];
                             var chart = descendants.OfType<ResponseChart>().First(c => c.Mode == "Ramp");
                             chart.SetCurrentValue(ResponseChart.SmoothnessProperty, 75u);
                             chart.SetCurrentValue(ResponseChart.RampRateProperty, 20u);
@@ -121,7 +143,7 @@ internal static class Program
                             vm.ConfigVm.UseVoltageCompensation = true;
                             Check(vm.ConfigVm.GetConfig().UseVoltageCompensation, "system toggle changes the global configuration");
                         }
-                        Screenshot(window, Path.Combine(output, $"{(dark ? "dark" : "light")}-{(int)size.Width}-{index}.png"));
+                        Screenshot(surface, Path.Combine(output, $"{(dark ? "dark" : "light")}-{(int)size.Width}-{index}.png"));
                     }
                 }
             }
