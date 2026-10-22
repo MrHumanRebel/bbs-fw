@@ -138,6 +138,9 @@ internal static class Program
                                 "every quick action includes an icon");
                             Check(actions.Where(b => BindingOperations.GetBinding(b, Button.CommandProperty)?.Path?.Path is "ReadFlashCommand" or "WriteFlashCommand" or "ResetFlashCommand").All(b => !b.IsEnabled),
                                 "controller quick actions are disabled while disconnected");
+                            var write = actions.First(b => AutomationProperties.GetAutomationId(b) == "WriteConfiguration");
+                            Check((write.Background as SolidColorBrush)?.Color == (app.FindResource("HoverBrush") as SolidColorBrush)?.Color,
+                                "disabled Write uses a neutral background instead of the active accent");
                             Check(actions.All(b => Bounds(b, surface).Left >= 0 && Bounds(b, surface).Right <= size.Width + 1),
                                 "quick actions stay within the window");
                             Check(actions.All(b => Bounds((FrameworkElement)b.Content, b).Width <= b.ActualWidth - b.Padding.Left - b.Padding.Right + 1),
