@@ -48,6 +48,7 @@ static void setup(void)
 {
 	g_config.max_current_amps = 25;
 	g_config.current_ramp_amps_s = 100;
+    g_config.use_voltage_compensation = 1;
 	g_config.max_battery_x100v_u16h = 5880 >> 8;
 	g_config.max_battery_x100v_u16l = 5880 & 255;
 	g_config.low_cut_off_v = 42;
@@ -57,7 +58,7 @@ static void setup(void)
 	g_config.assist_startup_level = 1;
 	g_config.pas_keep_current_percent = 60;
 	g_config.pas_keep_current_cadence_rpm = 40;
-	g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_THROTTLE | ASSIST_FLAG_VOLTAGE_COMPENSATION;
+	g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_THROTTLE;
 	g_config.assist_levels[0][1].target_current_percent = 100;
 	g_config.assist_levels[0][1].max_throttle_current_percent = 100;
 	g_config.assist_levels[0][1].max_cadence_percent = 100;
@@ -82,12 +83,76 @@ static void run(unsigned milliseconds)
 
 int main(int argc, char **argv)
 {
-	assert(argc == 2);
+	assert(argc == 2 || argc == 3);
 	const char *test = argv[1];
 	setup();
-	if (!strcmp(test, "disabled"))
+    if (argc == 3) g_config.current_ramp_smoothness_percent = 100;
+	if (!strcmp(test, "curve"))
+    {
+        for (uint16_t shape = 0; shape <= 100; ++shape)
+        {
+            uint16_t last = 0;
+            assert(current_ramp_curve(0, shape) == 0);
+            assert(current_ramp_curve(1000, shape) == 1000);
+            for (uint16_t t = 0; t <= 1000; ++t)
+            {
+                uint16_t value = current_ramp_curve(t, shape);
+                assert(value >= last && value <= 1000);
+                if (!shape) assert(value == t);
+                last = value;
+            }
+        }
+        assert(current_ramp_curve(250, 100) == 156);
+        assert(current_ramp_curve(500, 100) == 500);
+        assert(current_ramp_curve(750, 100) == 843);
+    }
+    else if (!strcmp(test, "ramp_profile"))
+    {
+        g_config.current_ramp_amps_s = 10;
+        g_config.current_ramp_smoothness_percent = 100;
+        start();
+        uint8_t value = 0, previous = 0;
+        apply_current_ramp_up(&value, true);
+        for (unsigned t = 0; t <= 2500; t += 5)
+        {
+            now = t; value = 100; apply_current_ramp_up(&value, true);
+            assert(value >= previous && value <= 100);
+            if (t == 625) assert(value == 15);
+            if (t == 1250) assert(value == 50);
+            previous = value;
+        }
+        assert(value == 100);
+        value = 0; apply_current_ramp_up(&value, false); assert(value == 0);
+        now = UINT32_MAX - 100; value = 60; apply_current_ramp_up(&value, true);
+        now += 1500; value = 60; apply_current_ramp_up(&value, true); assert(value == 60);
+        value = 10; apply_current_ramp_up(&value, true); assert(value == 10);
+        value = 90; apply_current_ramp_up(&value, false); assert(value == 90);
+        g_config.current_ramp_smoothness_percent = 0;
+        g_config.current_ramp_amps_s = 255;
+        now = 0; value = 0; apply_current_ramp_up(&value, false);
+        value = 100; apply_current_ramp_up(&value, true);
+        now = 50; value = 100; apply_current_ramp_up(&value, true); assert(value >= 50 && value <= 52);
+        now = 100; value = 100; apply_current_ramp_up(&value, true); assert(value == 100);
+    }
+    else if (!strcmp(test, "global_compensation"))
+    {
+        start(); battery_process();
+        for (uint8_t mode = 0; mode < 2; ++mode)
+            for (uint8_t level = 0; level < 10; ++level)
+            {
+                g_config.assist_levels[mode][level].flags = ASSIST_FLAG_PAS;
+                g_config.assist_levels[mode][level].target_current_percent = 100;
+                app_set_operation_mode(mode);
+                app_set_assist_level(level);
+                assert(compensate_pas_current(60) == 73);
+                g_config.use_voltage_compensation = 0;
+                assert(compensate_pas_current(60) == 60);
+                g_config.use_voltage_compensation = 1;
+            }
+    }
+    else if (!strcmp(test, "disabled"))
 	{
-		g_config.assist_levels[0][1].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
+		g_config.use_voltage_compensation = 0;
 		start(); run(2000); assert(motor_current == 60);
 	}
 	else if (!strcmp(test, "compensated"))
@@ -352,7 +417,7 @@ int main(int argc, char **argv)
 		g_config.assist_levels[0][1].torque_amplification_factor_x10 = 20;
 		start(); battery_process(); uint8_t current = 0; apply_pas_torque(&current);
 		uint8_t expected = current;
-		assist_level_data.level.flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
+		g_config.use_voltage_compensation = 0;
 		current = 0; apply_pas_torque(&current); assert(current == expected && current > 0);
 #endif
 	}

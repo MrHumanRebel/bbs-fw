@@ -12,7 +12,8 @@ The first reservation is **v2.0.0**, followed by v2.0.1, v2.0.2, etc. The same
 version is embedded in the firmware responses and Windows assembly/file
 metadata, and used for asset filenames and the GitHub tag/release. Source
 defaults start at 2.0.0; subsequent CI versions are injected at build time.
-Configuration schema version 5 is independent and remains unchanged.
+Configuration schema version 6 is independent of the release version; v5 EEPROM
+settings are migrated by the firmware.
 
 After host tests pass, `ci/release_version.py` atomically reserves a lightweight
 tag on the exact triggering commit. Concurrent commits retry tag collisions;

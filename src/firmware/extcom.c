@@ -30,7 +30,7 @@
 
 // Largest supported request is WRITE_CONFIG: header + payload + checksum.
 #define BUFFER_SIZE (sizeof(config_t) + 5u)
-#if CONFIG_VERSION != 5
+#if CONFIG_VERSION != 6
 #error Review maximum protocol request size when changing the configuration schema.
 #endif
 #define DISCARD_TIMEOUT_MS	50
@@ -501,7 +501,8 @@ static int16_t process_write_config()
 	if (compute_checksum(msgbuf, (uint8_t)(4 + sizeof(config_t))) == msgbuf[4 + sizeof(config_t)])
 	{
 		bool result = false;
-		if (version == CONFIG_VERSION && length == sizeof(config_t))
+		if (version == CONFIG_VERSION && length == sizeof(config_t) &&
+            msgbuf[4 + sizeof(config_t) - 2u] <= 1u && msgbuf[4 + sizeof(config_t) - 1u] <= 100u)
 		{
 			memcpy(&g_config, msgbuf + 4, sizeof(config_t));
 			result = cfgstore_save_config();

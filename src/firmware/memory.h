@@ -7,8 +7,11 @@
 
 #if defined(__SDCC_mcs51)
 #define RAM_BOOL __bit
+// Curve arithmetic uses the stack instead of scarce direct-RAM spill slots.
+#define RAM_REENTRANT __reentrant
 #else
 #define RAM_BOOL bool
+#define RAM_REENTRANT
 #endif
 
 #endif

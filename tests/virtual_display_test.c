@@ -82,25 +82,25 @@ int main(void)
 	assert(msg_len == 0 && app_get_assist_level() == 2 && operation_mode == OPERATION_MODE_SPORT);
 	assert(tx_count == 2 && tx[0] == 52 && tx[1] == 52);
 	puts("coalesced Bafang PAS/mode writes and current read: PASS");
-	assert(sizeof(config_t) == 154 && sizeof(msgbuf) == 159);
+	assert(sizeof(config_t) == 156 && sizeof(msgbuf) == 161);
 	/* A maximum configuration write followed immediately by telemetry. */
 	rx[0] = 2; rx[1] = 0xf1; rx[2] = CONFIG_VERSION; rx[3] = sizeof(config_t);
 	memcpy(rx + 4, &g_config, sizeof g_config);
 	rx[5] = 27; /* Max Current, second byte of the configuration payload. */
-	rx[158] = compute_checksum(rx, 158);
-	rx[159] = 1; rx[160] = 4; rx[161] = 5;
-	rx_pos = 0; rx_len = 162; msg_len = 0; discard_until_ms = 0; tx_count = 0;
+	rx[160] = compute_checksum(rx, 160);
+	rx[161] = 1; rx[162] = 4; rx[163] = 5;
+	rx_pos = 0; rx_len = 164; msg_len = 0; discard_until_ms = 0; tx_count = 0;
 	extcom_process();
 	assert(config_saves == 1 && g_config.max_current_amps == 27 && tx_count == 19);
 	assert(tx[0] == 2 && tx[1] == 0xf1 && tx[2] == 1);
 	assert(tx[4] == 1 && tx[5] == 4);
 	/* The same maximum request, one byte per application call. */
 	rx_pos = 0; rx_len = 0; msg_len = 0; tx_count = 0;
-	for (unsigned i = 0; i < 159; i++) { rx_len = i + 1; extcom_process(); }
+	for (unsigned i = 0; i < 161; i++) { rx_len = i + 1; extcom_process(); }
 	assert(config_saves == 2 && tx_count == 4 && msg_len == 0);
 	rx[5] = 28; /* Corrupt payload without updating its checksum. */
-	rx_pos = 0; rx_len = 159; tx_count = 0; extcom_process();
+	rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
 	assert(config_saves == 2 && g_config.max_current_amps == 27 && tx_count == 0);
-	puts("159-byte config buffer, pipelining, fragmentation, corrupt write rejection: PASS");
+	puts("161-byte config buffer, pipelining, fragmentation, corrupt write rejection: PASS");
 	return 0;
 }

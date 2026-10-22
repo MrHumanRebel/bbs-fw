@@ -10,6 +10,7 @@ namespace BBSFW.Themes
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "BBSFWTool", "theme.txt");
         private static ResourceDictionary palette;
+        public static event Action Changed;
         public static bool IsDark { get; private set; } = true;
 
         public static void Initialize()
@@ -25,13 +26,14 @@ namespace BBSFW.Themes
         {
             var next = new ResourceDictionary
             {
-                Source = new Uri($"Themes/{(dark ? "Dark" : "Light")}.xaml", UriKind.Relative)
+                Source = new Uri($"/BBSFWTool;component/Themes/{(dark ? "Dark" : "Light")}.xaml", UriKind.Relative)
             };
             var dictionaries = Application.Current.Resources.MergedDictionaries;
             if (palette != null) dictionaries.Remove(palette);
             dictionaries.Insert(0, next);
             palette = next;
             IsDark = dark;
+            Changed?.Invoke();
             if (!save) return;
             try
             {

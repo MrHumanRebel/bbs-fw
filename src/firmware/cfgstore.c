@@ -101,6 +101,24 @@ static bool read_config()
 	eventlog_write(EVT_MSG_CONFIG_READ_BEGIN);
 
 	uint8_t res = read(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t*)&g_config, sizeof(config_t));
+	if (res == EEPROM_ERROR_VERSION)
+	{
+		res = read(EEPROM_CONFIG_PAGE, 5, (uint8_t*)&g_config, sizeof(config_t) - 2u);
+		if (res == EEPROM_OK)
+		{
+			g_config.use_voltage_compensation = 0;
+			g_config.current_ramp_smoothness_percent = 0;
+			for (uint8_t mode = 0; mode < 2; ++mode)
+				for (uint8_t level = 0; level < 10; ++level)
+				{
+					if (g_config.assist_levels[mode][level].flags & ASSIST_FLAG_VOLTAGE_COMPENSATION)
+						g_config.use_voltage_compensation = 1;
+					g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
+				}
+			// Keep the migrated RAM configuration even if EEPROM persistence fails.
+			write_config();
+		}
+	}
 	switch (res)
 	{
 	default:
@@ -155,6 +173,8 @@ static void load_default_config()
 #endif
 
 	g_config.current_ramp_amps_s = 10;
+	g_config.use_voltage_compensation = 0;
+	g_config.current_ramp_smoothness_percent = 0;
 	g_config.max_battery_x100v_u16l = (uint8_t)5460;
 	g_config.max_battery_x100v_u16h = (uint8_t)(5460 >> 8);
 	g_config.low_cut_off_v = 42;

@@ -202,7 +202,7 @@ namespace BBSFW.ViewModel
 			{
 				if (res.Result)
 				{
-					MessageBox.Show("Configuration Written!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+					MessageBox.Show("Configuration written. Restart the controller before using the new settings.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
 				}
 				else
 				{

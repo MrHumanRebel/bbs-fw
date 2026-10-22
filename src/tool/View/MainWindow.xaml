@@ -8,7 +8,7 @@
 		xmlns:vw="clr-namespace:BBSFW.View"
         mc:Ignorable="d"
         Style="{StaticResource {x:Type Window}}" Title="BBS-FW Studio" Height="820" Width="1180" MinWidth="1000" MinHeight="650"
-        WindowStartupLocation="CenterScreen">
+        Icon="/BBSFWTool;component/Assets/Studio.png" WindowStartupLocation="CenterScreen">
 
 	<Window.DataContext>
 		<vm:MainViewModel />
@@ -52,7 +52,7 @@
 		<Grid Grid.Row="1" Margin="30,24,30,24">
             <StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="BBS" FontSize="30" FontWeight="Bold" />
+                    <Image Source="/BBSFWTool;component/Assets/Studio.png" Width="40" Height="40" Margin="0,0,12,0"/><TextBlock Text="BBS" FontSize="30" FontWeight="Bold" />
                     <TextBlock Text=" / STUDIO" FontSize="30" FontWeight="Light" Foreground="{DynamicResource MutedBrush}" />
                 </StackPanel>
                 <TextBlock Text="Your drive. Your settings." Style="{StaticResource Caption}" Margin="0,4,0,0"/>
@@ -67,7 +67,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><vw:VirtualDisplayView Margin="0" DataContext="{Binding VirtualDisplayVm}" /></ScrollViewer>
             </TabItem>
 			<TabItem Header="System" Tag="&#xE713;">
-				<ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"><vw:SystemView MinWidth="740" Margin="0,0,12,0" /></ScrollViewer>
+				<vw:SystemView />
 			</TabItem>
 			<TabItem Header="Assist Levels" Tag="&#xE9E9;">
 				<vw:AssistLevelsView Margin="0" DataContext="{Binding AssistLevelsVm}" />

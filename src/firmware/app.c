@@ -59,7 +59,6 @@ static RAM_BOOL cruise_paused;
 static int8_t temperature_contr_c;
 static int8_t temperature_motor_c;
 
-static uint16_t ramp_up_current_interval_ms;
 static uint32_t power_block_started_ms;
 static uint16_t power_block_duration_ms;
 static RAM_BOOL pas_blocked_after_walk;
@@ -132,7 +131,7 @@ bool apply_thermal_limit(uint8_t* target_current);
 bool apply_low_voltage_limit(uint8_t* target_current);
 bool apply_shift_sensor_interrupt(uint8_t* target_current);
 bool apply_brake(uint8_t* target_current);
-void apply_current_ramp_up(uint8_t* target_current, bool enable);
+void apply_current_ramp_up(uint8_t* target_current, bool enable) RAM_REENTRANT;
 void apply_current_ramp_down(uint8_t* target_current, bool enable);
 
 bool check_power_block();
@@ -167,7 +166,6 @@ void app_init()
 	temperature_contr_c = 0;
 	temperature_motor_c = 0;
 
-	ramp_up_current_interval_ms = (g_config.max_current_amps * 10u) / g_config.current_ramp_amps_s;
 	power_block_started_ms = 0;
 	power_block_duration_ms = 0;
 	pas_blocked_after_walk = false;
@@ -454,7 +452,7 @@ void apply_pretension(uint8_t* target_current)
 
 uint8_t compensate_pas_current(uint8_t current)
 {
-	if (!(assist_level_data.level.flags & ASSIST_FLAG_VOLTAGE_COMPENSATION) || current == 0)
+	if (!g_config.use_voltage_compensation || current == 0)
 	{
 		return current;
 	}
@@ -947,37 +945,46 @@ bool apply_brake(uint8_t* target_current)
 	return is_braking;
 }
 
-void apply_current_ramp_up(uint8_t* target_current, bool enable)
+uint16_t current_ramp_curve(uint16_t progress, uint8_t smoothness) RAM_REENTRANT
 {
-	static uint8_t ramp_up_target_current = 0;
-	static uint32_t last_ramp_up_increment_ms = 0;
+	progress = MIN(progress, 1000u);
+	smoothness = MIN(smoothness, 100u);
+	uint32_t smooth = ((uint32_t)progress * progress * (3000ul - 2ul * progress)) / 1000000ul;
+	return (uint16_t)(((uint32_t)progress * (100u - smoothness) + smooth * smoothness) / 100u);
+}
 
-	if (enable && *target_current > ramp_up_target_current)
+void apply_current_ramp_up(uint8_t* target_current, bool enable) RAM_REENTRANT
+{
+	static uint8_t curve_start_current;
+	static uint8_t curve_target_current;
+	static uint8_t curve_output;
+	static uint32_t curve_start_ms;
+	uint32_t now = system_ms();
+	if (!enable || *target_current <= curve_output)
 	{
-		uint32_t now = system_ms();
-		uint16_t time_diff = now - last_ramp_up_increment_ms;
-
-		if (time_diff >= ramp_up_current_interval_ms)
-		{
-			++ramp_up_target_current;
-
-			if (last_ramp_up_increment_ms == 0)
-			{
-				last_ramp_up_increment_ms = now;
-			}
-			else
-			{
-				// offset for time overshoot to not accumulate large ramp error
-				last_ramp_up_increment_ms = now - (uint8_t)(time_diff - ramp_up_current_interval_ms);
-			}
-		}
-
-		*target_current = ramp_up_target_current;
+		curve_output = *target_current;
+		curve_target_current = *target_current;
+		curve_start_ms = now;
 	}
 	else
 	{
-		ramp_up_target_current = *target_current;
-		last_ramp_up_increment_ms = 0;
+		if (*target_current != curve_target_current)
+		{
+			curve_start_current = curve_output;
+			curve_target_current = *target_current;
+			curve_start_ms = now;
+		}
+		uint8_t span = curve_target_current - curve_start_current;
+		uint32_t duration_ms = ((uint32_t)span * g_config.max_current_amps * 10u) /
+			(MAX(g_config.current_ramp_amps_s, 1u));
+		// offset for time overshoot to not accumulate large ramp error
+		// Elapsed time also avoids the old one-percent-per-application-tick ceiling.
+		uint32_t elapsed = now - curve_start_ms;
+		uint16_t progress = duration_ms == 0 || elapsed >= duration_ms ? 1000u :
+			(uint16_t)((elapsed * 1000ul) / duration_ms);
+		curve_output = curve_start_current + (uint8_t)(((uint32_t)span *
+			current_ramp_curve(progress, g_config.current_ramp_smoothness_percent)) / 1000u);
+		*target_current = MIN(*target_current, curve_output);
 	}
 }
 

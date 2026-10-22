@@ -1,3 +1,7 @@
+> Configuration v6 supersedes the original per-level UI described below.
+> Compensation is now one System switch for both profiles. Existing v5 flags
+> migrate to the global setting; see [adaptive controls](adaptive-studio-controls.md).
+
 # Optional battery voltage compensation for PAS (#104)
 
 The pasted feature request is issue #104. Issue #105 describes a separate

@@ -3,7 +3,7 @@
 Run all C regression suites with `sh tests/run.sh`. For the optional voltage
 compensation feature, see [#104](../doc/issue-104-pas-voltage-compensation.md).
 Its configuration serialization tests run with
-`dotnet run --project tests/ConfigurationTests` (.NET 8).
+`dotnet run --project tests/ConfigurationTests` (.NET 10).
 The same runner covers the [walk-release fix for #120](../doc/issue-120-walk-release.md).
 It also covers the [speed-limit endpoint fix for #197](../doc/issue-197-speed-limit.md).
 The [virtual display/control implementation for #207](../doc/issue-207-virtual-display.md)
@@ -80,3 +80,31 @@ time so only the tested current getter and UART writer need mocks.
 See [the #123 investigation](../doc/issue-123-display-power.md) for evidence and
 the hardware information still required. This test is diagnostic evidence, not
 a fix for the reported display behavior.
+
+
+## Adaptive Studio and configuration v6
+
+`sh tests/run.sh` also exercises the integer current-rise curve, segment duration,
+monotonicity, target reductions, wraparound and interlocks with S-curve shaping
+enabled. The EEPROM harness runs the production v5-to-v6 migration and verifies
+persistence, preservation of old settings and corrupt-data recovery. Protocol
+tests use the new 156-byte configuration and 161-byte maximum command frame.
+
+`dotnet run --project tests/ConfigurationTests --configuration Release` checks
+v6 binary/XML serialization, legacy compensation migration, shape validation and
+UI/firmware curve reference values.
+
+On Windows, run:
+
+```pwsh
+dotnet run --project tests/WindowsUiTests --configuration Release -- ui-preview
+```
+
+This opens a disconnected application, checks all
+six pages at 1000×650, 1280×720 and 1920×1080 in both themes, and writes PNG
+screenshots. It checks workspace stretch, nonoverlapping cards, the wide System
+layout without scrollbars, text colors, the connection toolbar and two-way curve
+bindings. It neither connects to a controller nor arms bench controls. The
+`Windows UI validation` workflow runs this suite on pull requests and uploads
+`windows-ui-preview`. Screenshot dimensions are WPF logical pixels; physical
+multi-monitor DPI behavior still needs a manual Windows check.
