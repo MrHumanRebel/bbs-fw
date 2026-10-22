@@ -87,7 +87,7 @@ Bench controls must only be used with the **driven wheel clear of the ground**. 
 
 Read the [Virtual Display and bench-control documentation](doc/issue-207-virtual-display.md) before using this feature. The automated tests do not constitute physical controller or on-bike validation.
 
-![BBS-FW Windows configuration tool](https://postimg.cc/k22fCt8d)
+![BBS-FW Windows configuration tool](https://i.postimg.cc/zGjMnCG3/Untitled.jpg)
 
 ## Build and test
 
