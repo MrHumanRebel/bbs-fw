@@ -1,0 +1,4 @@
+
+# Python analysis/test bytecode is generated locally.
+**/__pycache__/
+*.pyc

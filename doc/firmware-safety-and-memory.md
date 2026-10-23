@@ -161,6 +161,27 @@ peak stack requirement or the 5 ms application deadline. STM8 simulation sets
 SP to the S105's actual 0x07ff RAM top and keeps overflow checking enabled with
 a conservative 0x03ff lower boundary.
 
+The complete 101-shape offline probe recorded these stack extensions above its
+entry marker (the fixture and main frame are outside this measurement):
+
+| Target | Baseline probe stack / feature probe stack / delta |
+| --- | --- |
+| BBS02 | 46 / 33 / −13 bytes |
+| BBSHD | 46 / 33 / −13 bytes |
+| TSDZ2 | 72 / 74 / +2 bytes |
+
+A separate identical three-shape timing workload (`--timing-sample`, smoothness
+0, 50 and 100 plus the app-level safety scenarios) produced these emulator clock
+counts. They compare software workloads, not motor efficiency or real controller
+deadline margins. The baseline skips the new profile assertion but executes the
+same request and mocked safety sequence.
+
+| Target | Baseline simulator clocks | Feature simulator clocks |
+| --- | ---: | ---: |
+| BBS02 | 1,261,840,140 | 1,196,627,292 |
+| BBSHD | 1,263,974,208 | 1,197,626,628 |
+| TSDZ2 | 21,946,869 | 19,313,740 |
+
 ## Verification limits
 
 GPIO/pin assignments, ADC scaling, UART drivers/baud rates, ISR bodies, watchdog
