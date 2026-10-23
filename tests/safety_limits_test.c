@@ -10,8 +10,9 @@ int main(int argc, char **argv)
     g_config.use_voltage_compensation = 0;
     if (!strcmp(argv[2], "adaptive") || !strcmp(argv[2], "adaptive_pas") || !strncmp(argv[2], "efficiency", 10))
     {
-        g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_ADAPTIVE;
+        g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_EFFICIENCY;
         g_config.assist_levels[0][1].torque_amplification_factor_x10 = 25;
+        g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
         if (!strncmp(argv[2], "efficiency", 10))
         {
             g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_VARIABLE;
@@ -70,6 +71,18 @@ int main(int argc, char **argv)
         assert(motor_current == 0);
         assert(app_get_status_code() == STATUS_ERROR_MOTOR_OVER_TEMP);
     }
+    else if (!strcmp(argv[1], "sensor_controller") || !strcmp(argv[1], "sensor_motor"))
+    {
+        controller_temperature_failed = !strcmp(argv[1], "sensor_controller");
+        motor_temperature_failed = !strcmp(argv[1], "sensor_motor");
+        run(5);
+        assert(motor_current == 0 && !motor_enabled);
+        assert(app_get_status_code() == (controller_temperature_failed ?
+            STATUS_ERROR_CONTROLLER_TEMP_SENSOR : STATUS_ERROR_MOTOR_TEMP_SENSOR));
+        assert(app_get_temperature() == 0); /* Never publish the fault as a hot/cold measurement. */
+        controller_temperature_failed = false; motor_temperature_failed = false;
+        run(3000); assert(motor_current >= 10);
+    }
     else if (!strcmp(argv[1], "cutoff"))
     {
         voltage = g_config.low_cut_off_v * 10u;
@@ -97,7 +110,7 @@ int main(int argc, char **argv)
             requested_current = 100;
             apply_thermal_limit();
             assert(app_get_temperature() <= 127); /* Keeps the display conversion input bound valid. */
-            uint8_t expected = sample > MAX_TEMPERATURE * 100 ? 0 :
+            uint8_t expected = sample == TEMPERATURE_SENSOR_FAULT_X100 || sample > MAX_TEMPERATURE * 100 ? 0 :
                 sample < (MAX_TEMPERATURE - MAX_TEMPERATURE_RAMP_DOWN_INTERVAL) * 100 ? 100 :
                 (uint8_t)MAP32(sample,
                     (MAX_TEMPERATURE - MAX_TEMPERATURE_RAMP_DOWN_INTERVAL) * 100,

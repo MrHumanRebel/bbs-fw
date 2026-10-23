@@ -12,7 +12,7 @@ namespace BBSFW.Model
             long smooth = (long)progress * progress * (3000 - 2 * progress) / 1000000;
             return (int)((progress * (100 - smoothness) + smooth * smoothness) / 100);
         }
-        public static int AdaptivePowerTenths(int cadenceRpmTenths, uint budgetWatts) =>
+        public static int PasBudgetTenths(int cadenceRpmTenths, uint budgetWatts) =>
             (int)(Math.Clamp(budgetWatts / 10, 0, 255) * Math.Clamp(cadenceRpmTenths, 150, 600) / 6);
 
         public static double RiseSeconds(uint amps, uint ampsPerSecond) => (double)amps / Math.Max(ampsPerSecond, 1);

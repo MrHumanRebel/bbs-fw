@@ -8,11 +8,11 @@ There are exactly three selectable optimization profiles: BBS02B, BBSHD and TSDZ
 
 The BBS02B sweep is an accepted engineering proxy with an unidentified source revision. Output crank speed is not automatically rider cadence. Older Grin BBS02 parameters remain related-family references. BBSHD has its own four-point source and independently measured specimen parameters. TSDZ2 winding R/L conventions are unidentified, and the nine trainer observations concern TSDZ2B, not the supported TSDZ2 controller. No source supplies a verified, transferable two-dimensional efficiency surface or calibrated thermal RC model.
 
-Consequently the firmware neither infers motor torque, phase current, rider watts nor physical efficiency. No published resistance, inductance, maximum-efficiency rpm, nominal motor wattage or 70 °C trainer endpoint becomes a hardware control constant. Actual human power requires per-bike torque calibration; this feature does not introduce such an estimate. A failed TSDZ2 torque sensor disables experimental PAS, while independently configured throttle retains its original behavior.
+Consequently the firmware neither infers motor torque, phase current, rider watts nor physical efficiency. No published resistance, inductance, maximum-efficiency rpm, nominal motor wattage or 70 °C trainer endpoint becomes a hardware control constant. Actual human power requires per-bike torque calibration; this feature does not introduce such an estimate. A failed TSDZ2 torque sensor disables Adaptive Efficiency PAS, while independently configured throttle retains its original behavior.
 
 ## Control policy
 
-Adaptive Efficiency is an explicit PAS variant, separate from unchanged Adaptive Power and legacy cadence/torque/variable PAS. Its base remains the bounded, voltage-aware watt budget. Profile-specific low-cadence thresholds are conservative experimental policy choices, not fitted factory-map cutoffs:
+Adaptive Efficiency is the sole adaptive PAS variant alongside legacy cadence/torque/variable PAS. The previously separate Adaptive Power controller has been removed; its historical settings migrate to Efficiency without adding configuration fields. Its base remains the bounded, voltage-aware watt budget. Profile-specific low-cadence thresholds are conservative research-informed policy choices, not fitted factory-map cutoffs:
 
 | Profile | Enter below | Release at/above | Minimum request multiplier |
 |---|---:|---:|---:|
@@ -20,7 +20,7 @@ Adaptive Efficiency is an explicit PAS variant, separate from unchanged Adaptive
 | BBSHD | 40 rpm | 50 rpm | 95% |
 | TSDZ2 | 45 rpm | 55 rpm | 90% |
 
-After three seconds of valid demand, low-cadence shaping arms when the requested fraction of its own PAS watt budget reaches 40%, or when the unshaped current command reaches 40% of the independent level current ceiling. The alternative preserves operation when the current ceiling clips the full watt budget. It releases below 30% on both request references, or at the profile's cadence-release threshold. The 30% release point is above the 25% launch floor so a lightly requested quarter-budget command can release the hysteresis. It acts only above 75% of the configured speed ceiling. The multiplier recovers whenever that low-cadence/speed condition no longer applies. Speed approach no longer adds an independent 97% trim or 93% release threshold. Each eligible 100 ms interval changes it by one percentage point, with no catch-up steps. Positive current reductions round down, preserving the profile's minimum multiplier even with coarse current resolution. Missing configured wheel speed falls back to unshaped Adaptive Power; missing pulses while standing cannot trigger a low-speed derate. Hill starts and low-speed climbing therefore retain the existing budget.
+After three seconds of valid demand, low-cadence shaping arms when the requested fraction of its own PAS watt budget reaches 40%, or when the unshaped current command reaches 40% of the independent level current ceiling. The alternative preserves operation when the current ceiling clips the full watt budget. It releases below 30% on both request references, or at the profile's cadence-release threshold. The 30% release point is above the 25% launch floor so a lightly requested quarter-budget command can release the hysteresis. It acts only above 75% of the configured speed ceiling. The multiplier recovers whenever that low-cadence/speed condition no longer applies. Speed approach no longer adds an independent 97% trim or 93% release threshold. Each eligible 100 ms interval changes it by one percentage point, with no catch-up steps. Positive current reductions round down, preserving the profile's minimum multiplier even with coarse current resolution. Missing configured wheel speed retains the unshaped bounded PAS budget; missing pulses while standing cannot trigger a low-speed derate. Hill starts and low-speed climbing therefore retain the existing budget.
 
 The budget fraction is already defined by `clamp(cadence_x10 / 600, 1/4, 1)`.
 Thus its 40% entry condition is `cadence_x10 >= 240`, and its below-30% release
@@ -106,8 +106,8 @@ lower request immediately. Zero demand, bypass and larger falls reset the
 tracker; no deadband holds excess current above a current/power/safety envelope.
 Larger upward changes remain rate/acceleration bounded and missed deadlines
 never generate catch-up steps. Existing optional comfort decay retains its own
-safety bypass. Adaptive Power and legacy PAS keep their original tracker/ramp
-behavior.
+safety bypass. Legacy cadence/torque/variable PAS keep their original tracker/ramp behavior;
+retired power-only settings now use the sole Efficiency controller.
 
 ## Memory and scheduling
 
@@ -117,10 +117,19 @@ The Adaptive tracker uses Q7 percentage position and velocity, advancing at most
 
 ## Configuration and protections
 
-Schema 8 keeps the exact 156-byte configuration and 161-byte maximum request. Existing byte 154 packs bit 0 voltage compensation, bits 1–2 profile (0 BBS02B, 1 BBSHD, 2 TSDZ2; 3 rejected), and bit 3 optional comfort decay. Reserved bits are rejected. No EEPROM field or page is added. The explicit Adaptive Efficiency variant combines existing Adaptive and Variable bits; v7 considered that combination invalid. Genuine v5/v6/v7 migration never selects it and never enables comfort. The firmware and write guard reject enabled efficiency settings for a different compile target. The BBS02 build mapping still requires independently verified compatible BBS02B STC/UART hardware; profile selection cannot establish PCB compatibility.
+Schema 8 keeps the exact 156-byte configuration and 161-byte maximum request. Existing byte 154 packs bit 0 voltage compensation, bits 1–2 profile (0 BBS02B, 1 BBSHD, 2 TSDZ2; 3 rejected), and bit 3 optional comfort decay. Reserved bits are rejected. No EEPROM field or page is added. The explicit Adaptive Efficiency variant combines existing Adaptive and Variable bits; v7 considered that combination invalid. Genuine v5/v6 migration never selects it; retired v7/v8 power-only budgets now migrate to Efficiency. Migration never enables comfort. This follows the later request to remove the separate Adaptive Power controller. The firmware and write guard reject enabled efficiency settings for a different compile target. The BBS02 build mapping still requires independently verified compatible BBS02B STC/UART hardware; profile selection cannot establish PCB compatibility.
 
 Optional comfort decay operates only while valid forward-pedaling demand remains positive. Its output cannot exceed the current full-budget electrical envelope or per-level current limit, including after voltage recovery. Pedal stop, invalid voltage, braking, hard LVC, thermal, speed, shift, motor fault and configuration-change shutdown retain priority. Partial protection envelopes disable comfort even when rider demand is already below the protective cap. Throttle remains independent of the PAS-only watt budget and has an explicit GUI disclosure.
 
 ## Validation limits
 
 Host tests, configuration/XML and UI binding tests, native SDCC builds and MCU instruction-set simulations cover the implemented invariants. Linker stack availability is not measured peak interrupt-plus-call stack use. Off-target timing is not a hardware deadline guarantee. Actual controller revision checks, current/voltage calibration, stack watermarking with interrupts, transient capture, wheel-clear safety tests and matched road A/B runs remain physical validation work. No percentage range improvement or universal safe hardware power rating is claimed.
+
+## Subsequent sensor/SOC requirements
+
+The user approved using the existing temperature enable mask as the physical
+sensor-presence declaration. New defaults therefore enable only a supported
+controller sensor; persisted choices are preserved. See the [sensor/SOC report](../sensor-soc-hardening.md)
+for raw ADC fault handling, PAS spacing and conservative loaded-SOC freshness.
+The public mode label is Adaptive Efficiency, without an experimental qualifier;
+that naming change does not establish a measured physical efficiency gain.

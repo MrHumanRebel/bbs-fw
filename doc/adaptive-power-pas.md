@@ -1,9 +1,9 @@
-# Adaptive Power PAS variant
+# Adaptive Efficiency PAS variant
 
 ## Configuration and behavior
 
 For any Standard or Sport assist level, select **Type: PAS**, then
-**Variant: Adaptive Power**. Set **PAS budget (W)** in **10 W steps**, from 10 W up to the smaller of 2550 W
+**Variant: Adaptive Efficiency**. Set **PAS budget (W)** in **10 W steps**, from 10 W up to the smaller of 2550 W
 and the configured voltage/current/level ceiling. Selecting this variant starts
 with up to 250 W, bounded by that ceiling. This is a
 per-level control algorithm, not a global ECO switch or a preset of the existing
@@ -43,14 +43,14 @@ small budgets or low current ceilings can produce a request of zero. For example
 240 W under this model.
 
 Global Keep Current and voltage-compensation settings retain their existing
-meaning for the old PAS variants. Adaptive Power calculates its own
+meaning for the old PAS variants. Adaptive Efficiency calculates its own
 cadence-to-power envelope and voltage-to-current conversion, so those settings
 do not add a second scaling/boost. Max Current, Max Cadence and Max Speed remain
 independent level ceilings. Throttle remains optional, uses its own existing
 current mapping and can override the PAS budget. Walk assist retains its normal
 behavior and release interlock.
 
-For Adaptive Power and Adaptive Efficiency, rising targets use a fixed-point
+For Adaptive Efficiency, rising targets use a fixed-point
 position/velocity tracker that retains velocity across target changes. It advances
 at most one bounded 20 ms step per application call; delayed processing cannot
 produce a catch-up surge. Smoothness controls acceleration and the final approach.
@@ -61,10 +61,10 @@ full-budget current ceiling; coasting and all protection envelopes bypass it.
 Level/mode changes reset the correct shared ramp state. Other PAS variants retain
 the previous segmented ramp byte-for-byte across all 101 smoothness settings.
 
-## Adaptive Efficiency: explicit experimental variant
+## Motor profiles and efficiency shaping
 
 Select **System → Motor profile: BBS02B, BBSHD or TSDZ2**, then choose
-**PAS → Adaptive Efficiency (experimental)** on each desired level. This does not
+**PAS → Adaptive Efficiency** on each desired level. This does not
 activate a global ECO mode or alter other levels. New/default and migrated
 configurations never enable the variant or comfort automatically. An enabled
 profile must match the actual connected controller; BBS02B additionally requires
@@ -84,8 +84,8 @@ Very small corrections can round to no current change: BBSHD at 48 V / 30 A,
 250 W and 39 rpm arms its 5% trim, but an 11% current command remains 11%; at
 500 W it changes 22% to 21%. The profile's trim bound is not rounded upward.
 Low-speed hill starts retain the base budget. Missing configured wheel speed
-falls back to unshaped Adaptive Power; invalid cadence, voltage or the existing
-TSDZ2 torque-sensor fault indication produces zero experimental PAS demand.
+retains the unshaped bounded PAS budget; invalid cadence, voltage or the existing
+TSDZ2 torque-sensor fault indication produces zero Adaptive Efficiency PAS demand.
 
 A global 100 km/h limit and a 20% level limit give the existing 20 km/h safety
 ceiling. Adaptive Efficiency eases PAS current over the existing approach region
@@ -118,17 +118,23 @@ Configuration schema **8** retains the **156-byte** payload, **6-byte** assist
 level and **161-byte** maximum request. Native compile-time checks enforce the
 configuration, five-byte PAS cache and seven-byte maximum shared ramp state.
 
-- Flag `0x80` keeps its schema-7 Adaptive Power meaning. In schema 8,
-  `0x80 | 0x08` selects Adaptive Efficiency; the combination was invalid in v7.
+- `0x80 | 0x08` is the sole Adaptive Efficiency encoding. The separate Adaptive
+  Power mode has been removed. Historical v7/v8 `0x80` power-only settings are
+  decoded into Adaptive Efficiency with the same budget/current/speed settings;
+  the connected/compiled controller supplies the profile during migration.
+  A genuine v7 combined `0x80 | 0x08` remains invalid, since v7 rejected it.
 - The existing `torque_amplification_factor_x10` byte still stores Adaptive
   budgets in 10 W steps and retains its original Torque PAS meaning.
 - Existing byte 154 packs voltage compensation in bit 0, the three profile
   choices in bits 1–2, and comfort in bit 3. Reserved profile/option bits are
   rejected. No EEPROM layout or frame grows.
-- v7 migration preserves genuine Adaptive Power and rejects its previously
-  invalid combined variant. v6 clears the retired per-level compensation bit;
-  v5 also migrates compensation to the global setting. None activates efficiency
-  or comfort. The compiled profile is only a selection default.
+- v7 migration preserves genuine power budgets by moving them to Adaptive
+  Efficiency, and rejects its previously invalid combined variant. The new tool
+  always writes the sole Efficiency encoding; new UART writes reject retired
+  power-only encoding. v6 clears the retired per-level compensation bit;
+  v5 also migrates compensation to the global setting. Neither v5 nor v6
+  activates Efficiency, and no migration enables comfort. The compiled profile
+  is a selection default except when migrating retired power-only encoding.
 - Old XML `VoltageCompensation` names still migrate to the global control. New
   XML retains the explicitly selected variant, profile and comfort option.
 - Writes require matching schema 8 and reject mixed adaptive/torque or
@@ -183,3 +189,13 @@ Bench-test the supported controller with the driven wheel clear before riding.
 Any range claim requires measured battery Wh/km, distance, elapsed time, rider
 contribution, gearing and comparable route/weather conditions; a smaller
 configured power budget alone does not establish improved system efficiency.
+
+## Sensor integrity and SOC display
+
+The [sensor/SOC hardening report](sensor-soc-hardening.md) documents PAS pulse
+spacing, enabled thermistor fail-safe behavior and loaded voltage-based SOC
+updates. New defaults enable Controller temperature on BBS02/BBSHD and no
+unavailable sensors on TSDZ2. Saved sensor selections remain unchanged: on BBSHD,
+**All requires an installed motor thermistor**; choose Controller if it is absent.
+The watt input's rounding/current-ceiling behavior is unchanged; the reported
+zero-input issue was withdrawn by the user and no speculative input fix was made.

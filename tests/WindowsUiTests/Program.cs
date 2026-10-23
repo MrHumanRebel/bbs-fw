@@ -84,8 +84,8 @@ internal static class Program
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
         var adaptiveLevel = vm.ConfigVm.StandardAssistLevels[1];
-        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
-        adaptiveLevel.AdaptivePowerWatts = 250;
+        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency);
+        adaptiveLevel.PasBudgetWatts = 250;
         var tabs = (TabControl)window.FindName("WorkspaceTabs");
         // Hosted Windows desktops cap top-level HWNDs near 1024x768. Exercise
         // the actual WPF content offscreen at exact logical viewport sizes.
@@ -151,17 +151,17 @@ internal static class Program
                         }
                         if (index == 3)
                         {
-                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "AdaptivePowerBudget");
-                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Power exposes a per-level watt budget");
+                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "PasBudget");
+                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Efficiency exposes a per-level watt budget");
                             var warning = descendants.OfType<TextBlock>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveQuantizationWarning");
-                            adaptiveLevel.AdaptivePowerWatts = 10; Pump();
+                            adaptiveLevel.PasBudgetWatts = 10; Pump();
                             Check(warning.Text.Contains("zero current") && warning.Text.Contains("throttle"), "Adaptive PAS shows quantization and throttle warnings");
-                            adaptiveLevel.AdaptivePowerWatts = 250;
+                            adaptiveLevel.PasBudgetWatts = 250;
                             var preview = descendants.OfType<ResponseChart>().First(c => c.Mode == "Adaptive");
-                            Check(preview.BudgetPower == adaptiveLevel.AdaptivePowerWatts, "adaptive preview binds to the selected level budget");
-                            adaptiveLevel.AdaptivePowerWatts = 350; Pump();
+                            Check(preview.BudgetPower == adaptiveLevel.PasBudgetWatts, "adaptive preview binds to the selected level budget");
+                            adaptiveLevel.PasBudgetWatts = 350; Pump();
                             Check(preview.BudgetPower == 350, "adaptive watt edits update the native preview");
-                            adaptiveLevel.AdaptivePowerWatts = 250;
+                            adaptiveLevel.PasBudgetWatts = 250;
                         }
                         if (index == 2)
                         {

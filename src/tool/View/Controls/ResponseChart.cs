@@ -54,7 +54,7 @@ namespace BBSFW.View.Controls
         private double Evaluate(double x)
         {
             if (Mode == "Ramp") return ResponseMath.Ramp((int)Math.Min(1000, x / Math.Max(0.001, ResponseMath.RiseSeconds(MaxCurrent, RampRate)) * 1000), Smoothness) / 1000d;
-            if (Mode == "Adaptive") return BudgetPower == 0 ? 0 : ResponseMath.AdaptivePowerTenths((int)(x * 10), BudgetPower) / (BudgetPower * 10d);
+            if (Mode == "Adaptive") return BudgetPower == 0 ? 0 : ResponseMath.PasBudgetTenths((int)(x * 10), BudgetPower) / (BudgetPower * 10d);
             if (Mode == "Throttle") return End <= Start ? 0 : x < Start ? 0 : .01 + .99 * Math.Clamp((x - Start) / (End - Start), 0, 1);
             // Reference cadence uses a 100% cadence limit (150 rpm), as in app.c.
             return 1 - Math.Clamp((x - Cadence) / Math.Max(1, 150d - Cadence), 0, 1) * (1 - Keep / 100d);

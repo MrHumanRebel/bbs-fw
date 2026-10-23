@@ -25,7 +25,6 @@ namespace BBSFW.ViewModel
 			Cadence,
 			Torque,
 			Variable,
-            AdaptivePower,
             AdaptiveEfficiency
 		}
 
@@ -54,8 +53,7 @@ namespace BBSFW.ViewModel
 				}
 
 				variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.Variable, "Variable"));
-                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptivePower, "Adaptive Power"));
-                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptiveEfficiency, "Adaptive Efficiency (experimental)"));
+                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptiveEfficiency, "Adaptive Efficiency"));
 
 				return variants;
 			}
@@ -142,7 +140,7 @@ namespace BBSFW.ViewModel
 				var variant = AssistPasVariant.Cadence;
                 if (IsPasAssistAdaptiveVariant)
                 {
-                    variant = IsPasAssistEfficiencyVariant ? AssistPasVariant.AdaptiveEfficiency : AssistPasVariant.AdaptivePower;
+                    variant = AssistPasVariant.AdaptiveEfficiency;
                 }
                 else if (_level.Type.HasFlag(Configuration.AssistFlagsType.PasTorque))
 				{
@@ -170,8 +168,7 @@ namespace BBSFW.ViewModel
 					switch(value.Value)
 					{
                         case AssistPasVariant.AdaptiveEfficiency:
-                        case AssistPasVariant.AdaptivePower:
-                            AdaptivePowerWatts = 250;
+                            PasBudgetWatts = 250;
                             break;
 						case AssistPasVariant.Variable:
 							TorqueAmplificationFactor = 0;
@@ -242,19 +239,19 @@ namespace BBSFW.ViewModel
         public bool IsPasAssistEfficiencyVariant => Configuration.IsEfficiencyLevel(_level);
         public bool IsPasAssistAdaptiveVariant => _level.Type.HasFlag(Configuration.AssistFlagsType.PasAdaptive);
 
-        public uint AdaptivePowerLimitWatts => _configVm.GetConfig().GetAdaptivePowerLimitWatts(_level);
-        public string AdaptivePowerLimitText => $"Configured ceiling: {AdaptivePowerLimitWatts} W (10 W steps), based on full-charge voltage and this level's current ceiling.";
+        public uint PasBudgetLimitWatts => _configVm.GetConfig().GetPasBudgetLimitWatts(_level);
+        public string PasBudgetLimitText => $"Configured ceiling: {PasBudgetLimitWatts} W (10 W steps), based on full-charge voltage and this level's current ceiling.";
 
         internal void RefreshPowerLimit(bool clamp)
         {
-            OnPropertyChanged(nameof(AdaptivePowerLimitWatts));
-            OnPropertyChanged(nameof(AdaptivePowerLimitText));
+            OnPropertyChanged(nameof(PasBudgetLimitWatts));
+            OnPropertyChanged(nameof(PasBudgetLimitText));
             OnPropertyChanged(nameof(AdaptiveQuantizationWarning));
             OnPropertyChanged(nameof(AdaptiveSpeedText));
             if (clamp && IsPasAssistAdaptiveVariant)
             {
-                if (AdaptivePowerWatts > AdaptivePowerLimitWatts) AdaptivePowerWatts = AdaptivePowerLimitWatts;
-                else if (AdaptivePowerWatts == 0 && AdaptivePowerLimitWatts >= 10) AdaptivePowerWatts = 250;
+                if (PasBudgetWatts > PasBudgetLimitWatts) PasBudgetWatts = PasBudgetLimitWatts;
+                else if (PasBudgetWatts == 0 && PasBudgetLimitWatts >= 10) PasBudgetWatts = 250;
             }
         }
 
@@ -264,21 +261,21 @@ namespace BBSFW.ViewModel
             {
                 double quantum = _configVm.MaxCurrentAmps * _configVm.MaxBatteryVolts / 100d;
                 if (!double.IsFinite(quantum) || quantum <= 0) return "Set valid battery voltage and current limits first.";
-                string consequence = AdaptivePowerWatts < quantum ? "The full budget can round to zero current." :
-                    AdaptivePowerWatts * 0.25 < quantum ? "Low-cadence demand can round to zero current." : "Requests round down to whole current steps.";
+                string consequence = PasBudgetWatts < quantum ? "The full budget can round to zero current." :
+                    PasBudgetWatts * 0.25 < quantum ? "Low-cadence demand can round to zero current." : "Requests round down to whole current steps.";
                 return $"1% current ≈ {quantum:F1} W at full charge. {consequence} Independent throttle can exceed this PAS-only watt budget.";
             }
         }
         public string AdaptiveSpeedText => $"Speed ceiling: {_configVm.MaxSpeedKph * MaxSpeedPercent / 100d:F1} km/h. Adaptive Efficiency trims demand near this ceiling; hill starts retain the base budget. This is not a guaranteed speed or a measured efficiency optimum.";
 
-        public uint AdaptivePowerWatts
+        public uint PasBudgetWatts
         {
             get => (uint)Math.Round(_level.TorqueAmplificationFactor * 100f);
             set
             {
-                uint rounded = Math.Min(Math.Max(value / 10u * 10u, 10u), AdaptivePowerLimitWatts);
+                uint rounded = Math.Min(Math.Max(value / 10u * 10u, 10u), PasBudgetLimitWatts);
                 _level.TorqueAmplificationFactor = rounded / 100f;
-                OnPropertyChanged(nameof(AdaptivePowerWatts));
+                OnPropertyChanged(nameof(PasBudgetWatts));
                 OnPropertyChanged(nameof(AdaptiveQuantizationWarning));
                 OnPropertyChanged(nameof(TorqueAmplificationFactor));
             }
@@ -397,9 +394,6 @@ namespace BBSFW.ViewModel
 			{
                 case AssistPasVariant.AdaptiveEfficiency:
                     result |= Configuration.AssistFlagsType.PasAdaptive | Configuration.AssistFlagsType.PasVariable;
-                    break;
-                case AssistPasVariant.AdaptivePower:
-                    result |= Configuration.AssistFlagsType.PasAdaptive;
                     break;
 				case AssistPasVariant.Torque:
 					result |= Configuration.AssistFlagsType.PasTorque;

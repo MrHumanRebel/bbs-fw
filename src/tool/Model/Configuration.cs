@@ -162,7 +162,7 @@ namespace BBSFW.Model
 			}
 		}
 
-        public uint GetAdaptivePowerLimitWatts(AssistLevel level)
+        public uint GetPasBudgetLimitWatts(AssistLevel level)
         {
             if (!float.IsFinite(MaxBatteryVolts) || MaxBatteryVolts <= 0 || MaxBatteryVolts > 100) return 0;
             // Match the voltage cents actually serialized on the wire. Always round power down.
@@ -192,7 +192,7 @@ namespace BBSFW.Model
         }
 
         public static bool IsEfficiencyLevel(AssistLevel level) =>
-            level.Type.HasFlag(AssistFlagsType.PasAdaptive | AssistFlagsType.PasVariable);
+            level.Type.HasFlag(AssistFlagsType.PasAdaptive);
 
 		// hmi
 		[XmlIgnore]
@@ -272,7 +272,7 @@ namespace BBSFW.Model
 			UsePushWalk = false;
 			UsePretension = false;
 			PretensionSpeedCutoffKph = 0;
-			UseTemperatureSensor = TemperatureSensor.All;
+			UseTemperatureSensor = target == BbsfwConnection.Controller.TSDZ2 ? TemperatureSensor.Disabled : TemperatureSensor.Controller;
 
 			LightsMode = LightsModeOptions.Default;
 
@@ -388,7 +388,7 @@ namespace BBSFW.Model
 
 			// apply default settings for non existing options in version
 			MaxBatteryVolts = 0f;
-			UseTemperatureSensor = TemperatureSensor.All;
+			UseTemperatureSensor = Target == BbsfwConnection.Controller.TSDZ2 ? TemperatureSensor.Disabled : TemperatureSensor.Controller;
 			WalkModeDataDisplay = WalkModeData.Speed;
 			PasKeepCurrentPercent = 100;
 			PasKeepCurrentCadenceRpm = 255;
@@ -736,8 +736,10 @@ namespace BBSFW.Model
             if (!ParseConfigPrefix(buffer.Take(ByteSizeV5).ToArray(), false)) return false;
             UseVoltageCompensation = buffer[154] != 0;
             CurrentRampSmoothnessPercent = buffer[155];
-            return StandardAssistLevels.Concat(SportAssistLevels).All(level => IsAdaptiveLevelValid(level) &&
-                !(level.Type.HasFlag(AssistFlagsType.PasAdaptive) && level.Type.HasFlag(AssistFlagsType.PasVariable)));
+            if (!StandardAssistLevels.Concat(SportAssistLevels).All(level => IsAdaptiveLevelValid(level) &&
+                !(level.Type.HasFlag(AssistFlagsType.PasAdaptive) && level.Type.HasFlag(AssistFlagsType.PasVariable)))) return false;
+            RetireLegacyPowerVariant();
+            return true;
         }
 
         public bool ParseFromBufferV8(byte[] buffer)
@@ -749,8 +751,29 @@ namespace BBSFW.Model
             EfficiencyProfile = (MotorEfficiencyProfile)((buffer[154] >> 1) & 3);
             AdaptiveComfort = (buffer[154] & 8) != 0;
             CurrentRampSmoothnessPercent = buffer[155];
-            return StandardAssistLevels.Concat(SportAssistLevels).All(IsAdaptiveLevelValid);
+            if (!StandardAssistLevels.Concat(SportAssistLevels).All(IsAdaptiveLevelValid)) return false;
+            RetireLegacyPowerVariant();
+            return true;
         }
+
+        // Keep historical budget/current/speed settings, but expose and encode only
+        // Adaptive Efficiency. Genuine v5/v6 legacy compensation is removed first.
+        private void RetireLegacyPowerVariant()
+        {
+            bool migrated = false;
+            foreach (var level in StandardAssistLevels.Concat(SportAssistLevels))
+                if (level.Type.HasFlag(AssistFlagsType.PasAdaptive) && !level.Type.HasFlag(AssistFlagsType.PasVariable))
+                {
+                    level.Type |= AssistFlagsType.PasVariable;
+                    migrated = true;
+                }
+            if (migrated && Target != BbsfwConnection.Controller.Unknown)
+                EfficiencyProfile = Target == BbsfwConnection.Controller.BBSHD ? MotorEfficiencyProfile.BBSHD :
+                    Target == BbsfwConnection.Controller.TSDZ2 ? MotorEfficiencyProfile.TSDZ2 : MotorEfficiencyProfile.BBS02B;
+        }
+
+        private static AssistFlagsType CanonicalFlags(AssistLevel level) =>
+            level.Type.HasFlag(AssistFlagsType.PasAdaptive) ? level.Type | AssistFlagsType.PasVariable : level.Type;
 
         private static bool IsAdaptiveLevelValid(AssistLevel level) =>
             !level.Type.HasFlag(AssistFlagsType.PasAdaptive) ||
@@ -805,7 +828,7 @@ namespace BBSFW.Model
 
 				for (int i = 0; i < StandardAssistLevels.Length; ++i)
 				{
-					bw.Write((byte)StandardAssistLevels[i].Type);
+					bw.Write((byte)CanonicalFlags(StandardAssistLevels[i]));
 					bw.Write((byte)StandardAssistLevels[i].MaxCurrentPercent);
 					bw.Write((byte)StandardAssistLevels[i].MaxThrottlePercent);
 					bw.Write((byte)StandardAssistLevels[i].MaxCadencePercent);
@@ -815,7 +838,7 @@ namespace BBSFW.Model
 
 				for (int i = 0; i < SportAssistLevels.Length; ++i)
 				{
-					bw.Write((byte)SportAssistLevels[i].Type);
+					bw.Write((byte)CanonicalFlags(SportAssistLevels[i]));
 					bw.Write((byte)SportAssistLevels[i].MaxCurrentPercent);
 					bw.Write((byte)SportAssistLevels[i].MaxThrottlePercent);
 					bw.Write((byte)SportAssistLevels[i].MaxCadencePercent);
@@ -908,7 +931,9 @@ namespace BBSFW.Model
                 var obj = serializer.Deserialize(reader) as Configuration;
                 obj.UseVoltageCompensation |= legacyCompensation;
                 if (!obj.StandardAssistLevels.Concat(obj.SportAssistLevels).All(IsAdaptiveLevelValid))
-                    throw new InvalidDataException("Invalid Adaptive Power PAS settings.");
+                    throw new InvalidDataException("Invalid Adaptive Efficiency PAS settings.");
+                obj.Target = Target;
+                obj.RetireLegacyPowerVariant();
                 CopyFrom(obj);
             }
 		}
@@ -982,8 +1007,8 @@ namespace BBSFW.Model
         {
             if (level.Type.HasFlag(AssistFlagsType.PasAdaptive))
             {
-                if (!IsAdaptiveLevelValid(level)) throw new Exception(name + ": Adaptive Power requires PAS, a 10–2550 W budget in 10 W steps, and no torque or cruise variant.");
-                uint maximum = GetAdaptivePowerLimitWatts(level);
+                if (!IsAdaptiveLevelValid(level)) throw new Exception(name + ": Adaptive Efficiency requires PAS, a 10–2550 W budget in 10 W steps, and no torque or cruise variant.");
+                uint maximum = GetPasBudgetLimitWatts(level);
                 if (Math.Round(level.TorqueAmplificationFactor * 100f) > maximum)
                     throw new Exception(name + $": PAS budget exceeds the configured current/voltage ceiling ({maximum} W). Reduce the budget or choose Motor Disabled when the ceiling is below 10 W.");
             }

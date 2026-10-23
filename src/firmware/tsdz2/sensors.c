@@ -163,7 +163,7 @@ uint16_t speed_sensor_get_rpm_x10()
 }
 
 
-int16_t temperature_contr_x100()
+int16_t temperature_contr_x100() RAM_REENTRANT
 {
 	return 0; // n/a
 }
@@ -195,7 +195,9 @@ void isr_timer4_ovf(void) __interrupt(ITC_IRQ_TIM4_OVF)
 		bool pas1 = GET_PIN_INPUT_STATE(PIN_PAS1);
 		bool pas2 = GET_PIN_INPUT_STATE(PIN_PAS2);
 
-		if (pas1 && !pas_prev1 /* && pas_period_counter > PAS_SENSOR_MIN_PULSE_MS_X10 */)
+		// Rejected edges must advance the timeout, without changing cadence,
+        // pulse count or direction. Raw edge history still updates below.
+        if (pas1 && !pas_prev1 && pas_period_counter > PAS_SENSOR_MIN_PULSE_MS_X10)
 		{
 			pas_pulse_counter++;
 

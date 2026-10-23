@@ -45,10 +45,10 @@ internal static class EfficiencyTests
             check(!new Configuration().ParseFromBufferV8(encoded), "reserved profile rejected for " + profile);
             encoded[154] = 16;
             check(!new Configuration().ParseFromBufferV8(encoded), "unknown option bits rejected for " + profile);
-            // Construct genuine v7 Adaptive Power, not a new combined variant.
+            // Construct genuine v7 power-budget encoding, not a new combined variant.
             encoded[154] = 1; encoded[34 + 6] &= unchecked((byte)~(byte)Configuration.AssistFlagsType.PasVariable);
             check(restored.ParseFromBufferV7(encoded) && !restored.AdaptiveComfort &&
-                !Configuration.IsEfficiencyLevel(restored.StandardAssistLevels[1]), "v7 migration never enables efficiency or comfort for " + profile);
+                Configuration.IsEfficiencyLevel(restored.StandardAssistLevels[1]), "v7 power migration selects the sole Efficiency controller without comfort for " + profile);
             encoded[34 + 6] |= (byte)Configuration.AssistFlagsType.PasVariable;
             check(!new Configuration().ParseFromBufferV7(encoded), "corrupt v7 combined variant never becomes efficiency for " + profile);
         }
@@ -59,19 +59,49 @@ internal static class EfficiencyTests
         level.TargetCurrentPercent = 100;
         level.MaxSpeedPercent = 20;
         level.SelectedPasVariant = level.AssistPasVariantOptions.First(x => x.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency);
-        level.AdaptivePowerWatts = 10;
+        level.PasBudgetWatts = 10;
         check(level.IsPasAssistEfficiencyVariant && !level.IsPasAssistVariableVariant && level.IsPasAssistAdaptiveVariant,
             "Adaptive Efficiency is an explicit PAS variant, not a global ECO toggle");
         check(level.AdaptiveQuantizationWarning.Contains("zero current") && level.AdaptiveQuantizationWarning.Contains("throttle"),
             "10 W quantization warning and independent throttle disclosure are visible");
         check(level.AdaptiveSpeedText.Contains("20.0 km/h") || level.AdaptiveSpeedText.Contains("20,0 km/h"),
             "speed explanation uses global maximum times selected level percentage");
-        level.AdaptivePowerWatts = 40;
+        level.PasBudgetWatts = 40;
         check(level.AdaptiveQuantizationWarning.Contains("Low-cadence"), "launch quantization warning accounts for 25% budget floor");
         vm.MaxCurrentAmps = 5;
         check(!level.AdaptiveQuantizationWarning.Contains("zero current"), "quantization warning updates after global current changes");
         level.SelectedPasVariant = level.AssistPasVariantOptions.First(x => x.Value == AssistLevelViewModel.AssistPasVariant.Cadence);
         check(!level.IsPasAssistEfficiencyVariant && !level.IsPasAssistVariableVariant, "leaving efficiency clears both reused variant bits");
         check(!new Configuration().AdaptiveComfort, "comfort defaults OFF");
+        check(level.AssistPasVariantOptions.Count(x => x.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency) == 1 &&
+            level.AssistPasVariantOptions.All(x => x.Name != "Adaptive Power" && !x.Name.Contains("experimental")),
+            "only Adaptive Efficiency is selectable, without an experimental label");
+        foreach (var controller in new[] { BbsfwConnection.Controller.BBS02, BbsfwConnection.Controller.BBSHD, BbsfwConnection.Controller.TSDZ2 })
+        {
+            var fresh = new Configuration(controller);
+            check(fresh.UseTemperatureSensor == (controller == BbsfwConnection.Controller.TSDZ2 ?
+                Configuration.TemperatureSensor.Disabled : Configuration.TemperatureSensor.Controller),
+                controller + " defaults only to physically supported controller temperature protection");
+        }
+        var historical = new Configuration(BbsfwConnection.Controller.BBSHD)
+        {
+            MaxCurrentAmps = 25, MaxBatteryVolts = 48,
+            UseTemperatureSensor = Configuration.TemperatureSensor.All
+        };
+        historical.StandardAssistLevels[1].Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.PasAdaptive;
+        historical.StandardAssistLevels[1].MaxCurrentPercent = 100;
+        historical.StandardAssistLevels[1].MaxSpeedPercent = 80;
+        historical.StandardAssistLevels[1].TorqueAmplificationFactor = 2.5f;
+        byte[] previous = historical.WriteToBuffer();
+        previous[34 + 6] &= unchecked((byte)~(byte)Configuration.AssistFlagsType.PasVariable);
+        previous[154] = 0; // Old power-only settings did not require a matching selected profile.
+        var migrated = new Configuration(BbsfwConnection.Controller.BBSHD);
+        check(migrated.ParseFromBufferV8(previous) && Configuration.IsEfficiencyLevel(migrated.StandardAssistLevels[1]) &&
+            migrated.EfficiencyProfile == Configuration.MotorEfficiencyProfile.BBSHD &&
+            migrated.StandardAssistLevels[1].MaxSpeedPercent == 80 && migrated.StandardAssistLevels[1].TorqueAmplificationFactor == 2.5f &&
+            migrated.UseTemperatureSensor == Configuration.TemperatureSensor.All,
+            "retired power-only binary settings migrate to Efficiency with preserved limits and explicit temperature choices");
+        check((migrated.WriteToBuffer()[34 + 6] & 0x88) == 0x88,
+            "writes always encode the sole Efficiency variant, never the retired power-only mode");
     }
 }

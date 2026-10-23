@@ -215,11 +215,10 @@
                     <TextBlock Grid.Column="0" Grid.Row="4" Margin="0 8 0 0" Text="Temperature Sensor:" TextWrapping="Wrap">
                         <TextBlock.ToolTip>
                             <TextBlock Width="300" TextWrapping="Wrap">
-						Select which temperature sensors to use for thermal limiting if motor/controller gets to hot.
-						Normally you should have this set to "All" but if you have a motor or controller with a broken
-						temperature sensor it could be usuful to select only the sensors that are working. This will let
-						you continue to use your motor/controller even though temperature monitoring is not working.
-						</TextBlock>
+						Enable only sensors physically installed on your controller or motor. An enabled sensor fault stops motor output.
+                            BBS02: Controller. BBSHD: Controller, or All with an installed motor sensor. TSDZ2 does not provide these sensors.
+                            Disabling a sensor removes its thermal protection; repair a faulty sensor before riding.
+                            </TextBlock>
                         </TextBlock.ToolTip>
                     </TextBlock>
                     <ComboBox Grid.Column="2" Grid.Row="4" Margin="0 8 0 0" Padding="6 2 6 0" Width="80" Height="28" HorizontalAlignment="Right" ItemsSource="{Binding ConfigVm.TemperatureSensorOptions}" SelectedItem="{Binding ConfigVm.UseTemperatureSensor, UpdateSourceTrigger=PropertyChanged}"/>

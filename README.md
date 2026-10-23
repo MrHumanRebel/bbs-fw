@@ -20,8 +20,8 @@ A configurable alternative to stock firmware, with refined pedal assist and thro
 ### Protection and diagnostics
 
 - **Battery management** — Adjustable low-voltage cutoff, voltage calibration and gradual current reduction as the battery approaches its limit.
-- **Thermal protection** — Progressive power limiting using available motor or controller temperature sensors.
-- **Adaptive Power PAS** — Select a per-level cadence-aware watt budget with unchanged current and safety ceilings. [Behavior and limitations](doc/adaptive-power-pas.md).
+- **Thermal protection** — Progressive power limiting using installed motor/controller temperature sensors, with fail-safe stops for invalid enabled sensors.
+- **Adaptive Efficiency PAS** — Select a per-level cadence-aware watt budget with unchanged current and safety ceilings. [Behavior and limitations](doc/adaptive-power-pas.md).
 - **Voltage-compensated PAS** — Optional global compensation to help maintain more consistent electrical input power as battery voltage drops.
 - **Live telemetry** — Monitor wheel speed, battery voltage, current, electrical power and controller status through the Windows tool.
 

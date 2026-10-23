@@ -37,7 +37,7 @@ bool config_is_valid(const config_t RAM_XDATA* config) RAM_REENTRANT
             level->max_cadence_percent > 100u || level->max_speed_percent > 100u)
             return false;
         if ((level->flags & ASSIST_FLAG_PAS_ADAPTIVE) &&
-            (!(level->flags & ASSIST_FLAG_PAS) ||
+            (!(level->flags & ASSIST_FLAG_PAS) || !(level->flags & ASSIST_FLAG_PAS_VARIABLE) ||
             (level->flags & (ASSIST_FLAG_PAS_TORQUE | ASSIST_FLAG_CRUISE)) ||
             level->torque_amplification_factor_x10 == 0 ||
             level->torque_amplification_factor_x10 > config_power_budget_steps(config, level)))

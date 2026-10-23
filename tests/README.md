@@ -121,9 +121,9 @@ using an injected rejecting confirmation without opening a serial port.
 
 See [scope, hardware review and build measurements](../doc/connection-actions-and-safe-optimization.md).
 
-## Adaptive Power PAS and schema 7
+## PAS budget encoding and compatibility
 
-`sh tests/run.sh` also runs `adaptive_power_test.c` for every controller target.
+`sh tests/run.sh` also runs `pas_budget_test.c` for every controller target.
 It tests the cadence-based watt envelope, current ceilings, invalid/sagging/
 recovering battery voltage, global-compensation independence, all Standard/Sport
 levels, throttle override, zero-demand coast and the existing safety interlocks.
@@ -131,9 +131,9 @@ It compares non-adaptive ramp outputs with the frozen previous implementation
 and tests moving adaptive targets across clock wrap. Configuration and command
 frame sizes remain 156 and 161 bytes.
 
-Portable .NET checks exercise schema-7 binary/XML round trips, exact encoding of
-all 255 budgets, schema-5/6 migration and rejection of ambiguous flag combinations
-or unrepresentable budgets. Windows tests render Adaptive Power and verify the
+Portable .NET checks exercise current binary/XML round trips, exact encoding of
+all 255 budgets, schema-5/6/7 migration and rejection of ambiguous flag combinations
+or unrepresentable budgets. Windows tests render the sole Adaptive Efficiency mode and verify the
 watt input and preview bindings in both themes at all three viewport sizes.
 See [the algorithm, memory measurements and research limitations](../doc/adaptive-power-pas.md).
 
@@ -159,3 +159,28 @@ all three MCU targets, including the speed curve, throttle, LVC recovery dwell
 and target jitter. Use `--baseline-ref 31f73d5` for the same input sequence against
 the preceding implementation, with only the new-policy assertions skipped.
 See the [exact size/stack comparison](../doc/firmware-safety-and-memory.md).
+
+## PAS anti-glitch, loaded SOC and temperature fail-safe
+
+`pas_sensor_test.c` includes each real sensor ISR with only GPIO/timer mocks. It
+checks the minimum spacing boundary, ignored opposite-direction glitches,
+startup/held-level behavior, accepted-pulse recovery, valid direction reversal,
+stop timeout under rejected edges and 16-bit counter saturation/restart.
+`temperature_sensor_test.c` exercises actual NTC/PTC calculations, every PTC LUT
+endpoint, disabled/unavailable sensors, rail faults before/after valid readings,
+startup faults and the hottest accepted controller NTC sample without signed
+wraparound. Full-app safety tests check sensor-fault stop/status propagation.
+
+`battery_soc_test.c` covers continuous assist, command-versus-measured-current
+quiet qualification, transient sag, invalid voltage/configuration, wraparound,
+loaded-state flag masking and the existing SW102 percentage mapping. No test
+recorder or measurement buffer is linked into production firmware.
+
+`run_target_sensors.py` runs actual SDCC-produced sensor/SOC code on all three
+MCU ISAs. It reports stack extensions and six isolated ISR timing brackets using
+mock pin accesses. `--assembly` also rejects helper calls or multiply/divide in
+the real compiled production ISR; `--baseline-ref 7c84199` compares the preceding
+implementation. Simulator brackets omit actual interrupt entry/exit, nested
+interrupts and BBS's shared timer wrapper, and the generic C52 clock model is not
+STC15's 1T timing model. These are reproducible software regressions, not physical
+WCET or complete interrupt-stack certification.

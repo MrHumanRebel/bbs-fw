@@ -16,7 +16,6 @@ bool cfgstore_save_config(void) { ++config_saves; return true; }
 bool cfgstore_reset_config(void) { return false; }
 void eventlog_set_enabled(bool enabled) { (void)enabled; }
 int16_t motor_calibrate_battery_voltage(uint16_t voltage_x100) { (void)voltage_x100; return 0; }
-uint16_t motor_get_battery_current_x10(void) { return 260; }
 void uart_write(uint8_t byte) { assert(tx_count < sizeof tx); tx[tx_count++] = byte; }
 
 static void command(uint8_t enable, uint8_t level, uint8_t demand, bool accepted)
@@ -31,7 +30,7 @@ static void command(uint8_t enable, uint8_t level, uint8_t demand, bool accepted
 
 int main(void)
 {
-	setup(); g_config.max_current_amps = MAX_CONFIG_CURRENT_AMPS; start(); pedaling = false;
+	setup(); measured_battery_current = 260; g_config.max_current_amps = MAX_CONFIG_CURRENT_AMPS; start(); pedaling = false;
 	command(1, 1, 50, false); /* Zero first, never arm at positive throttle. */
 	command(1, 1, 0, true);
 	command(1, 1, 50, true); run(500); assert(motor_current == 50);
@@ -106,7 +105,8 @@ int main(void)
     now += DISCARD_TIMEOUT_MS + 1u;
     memcpy(rx + 4, &g_config, sizeof g_config);
     rx[2] = CONFIG_VERSION;
-    rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE;
+    rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY;
+    rx[4 + 154] = CONTROLLER_EFFICIENCY_PROFILE;
     rx[4 + 34 + 6 + 5] = 25;
     rx[160] = compute_checksum(rx, 160);
     rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
@@ -119,7 +119,7 @@ int main(void)
     rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
     assert(config_saves == 4 && tx_count == 4 && tx[2] == 1);
     assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY));
-    for (unsigned invalid = 0; invalid < 3; ++invalid)
+    for (unsigned invalid = 0; invalid < 4; ++invalid)
     {
         rx[2] = invalid == 2 ? 6 : CONFIG_VERSION;
         rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE | (invalid == 1 ? ASSIST_FLAG_PAS_TORQUE : 0);
@@ -130,7 +130,7 @@ int main(void)
         assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY));
         assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
     }
-    puts("v8 Adaptive/Efficiency writes, invalid budget/variant and old-version write rejection: PASS");
+    puts("Sole Efficiency writes, retired encoding, invalid budget/variant and old-version write rejection: PASS");
     for (unsigned invalid = 0; invalid < 3; ++invalid)
     {
         memcpy(rx + 4, &g_config, sizeof g_config);

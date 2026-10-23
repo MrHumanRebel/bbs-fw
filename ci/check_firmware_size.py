@@ -15,9 +15,11 @@ except ImportError:  # Direct script execution.
 BUDGETS = {
     # The coordinated speed envelope and recoverable LVC cost 313/313/107 bytes
     # versus 31f73d5. Reentrant LVC frees 8051 static spills; enforce that saving.
-    "BBS02": {"flash": 28256, "xram": 860, "stack_available": 164},
-    "BBSHD": {"flash": 29824, "xram": 874, "stack_available": 152},
-    "TSDZ2": {"code": 16064, "data": 581, "initialized": 61, "image_span": 16800},
+    # Sensor fail-safe, loaded SOC and the sole Efficiency controller add
+    # 505/539/208 bytes versus 7c84199, while freeing further direct-RAM spills.
+    "BBS02": {"flash": 28768, "xram": 860, "stack_available": 172},
+    "BBSHD": {"flash": 30368, "xram": 874, "stack_available": 155},
+    "TSDZ2": {"code": 16288, "data": 581, "initialized": 61, "image_span": 17024},
 }
 
 

@@ -10,6 +10,7 @@
 #define _SENSORS_H_
 
 #include "intellisense.h"
+#include "memory.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -30,7 +31,10 @@ uint16_t speed_sensor_get_rpm_x10();
 uint16_t torque_sensor_get_nm_x100();
 bool torque_sensor_ok();
 
-int16_t temperature_contr_x100();
+// Enabled, physically supported sensors return this sentinel on invalid ADC
+// input. Disabled/unavailable optional hardware retains the existing zero value.
+#define TEMPERATURE_SENSOR_FAULT_X100 INT16_MIN
+int16_t temperature_contr_x100() RAM_REENTRANT;
 int16_t temperature_motor_x100();
 
 bool brake_is_activated();
