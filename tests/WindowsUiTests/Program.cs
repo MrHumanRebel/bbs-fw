@@ -169,13 +169,18 @@ internal static class Program
                         {
                             var temperature = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "TemperatureSensor");
                             var thermalWarning = descendants.OfType<TextBlock>().First(t => AutomationProperties.GetAutomationId(t) == "MotorTemperatureWarning");
-                            Check(thermalWarning.IsVisible && thermalWarning.Text.Contains("presence is unverified") &&
+                            // Detached offscreen content has no PresentationSource; inspect
+                            // the bound card Visibility and measured content, not IsVisible.
+                            var thermalWarningCard = (Border)thermalWarning.Parent;
+                            Check(thermalWarningCard.Visibility == Visibility.Visible && thermalWarning.ActualHeight > 0 &&
+                                thermalWarning.Text.Contains("presence is unverified") &&
                                 thermalWarning.Text.Contains("0x14"), "All visibly warns about unverified factory motor sensing in either theme");
-                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.Controller; Pump();
-                            Check(!thermalWarning.IsVisible && !vm.ConfigVm.HasMotorTemperatureWarning,
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.Controller; Pump(); Layout(size);
+                            Check(thermalWarningCard.Visibility == Visibility.Collapsed && !vm.ConfigVm.HasMotorTemperatureWarning,
                                 "controller-only stock hardware does not show a missing optional sensor warning");
-                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.All; Pump();
-                            Check(thermalWarning.IsVisible && vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.All; Pump(); Layout(size);
+                            Check(thermalWarningCard.Visibility == Visibility.Visible && thermalWarning.ActualHeight > 0 &&
+                                vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
                                 "explicit All selection preserves protection and restores the visible warning");
                             var profile = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "EfficiencyProfile");
                             Check(profile.Items.Count == 3 && profile.Items.Cast<object>().Select(x => x.ToString()).SequenceEqual(new[] { "BBS02B", "BBSHD", "TSDZ2" }), "System exposes exactly three efficiency profiles");
