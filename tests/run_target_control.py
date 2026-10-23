@@ -32,7 +32,7 @@ void main(void)
     g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE | SYSTEM_EFFICIENCY_COMFORT;
     g_config.use_speed_sensor = true;
     g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY;
-    g_config.assist_levels[0][1].torque_amplification_factor_x10 = 100;
+    g_config.assist_levels[0][1].torque_amplification_factor_x10 = 25;
     start();
     /* Probe the actual bounded tracker, not a floating-point reimplementation. */
     probe_begin();
@@ -55,14 +55,33 @@ void main(void)
         value = 0; test_ramp_up(&value, true); CHECK(value == 0, 3);
     }
     g_config.current_ramp_amps_s = 100;
+#if defined(BBSHD)
+    g_config.max_current_amps = 30;
+#elif defined(TSDZ2)
+    g_config.max_current_amps = 20;
+#else
+    g_config.max_current_amps = 25;
+#endif
     pedal_cadence = EFFICIENCY_LOW_CADENCE_X10 - 10u;
     wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 4u / 5u;
-    reload_assist_params(); run(6000);
+    reload_assist_params(); run(2995);
+#ifndef BASELINE_PROBE
+    CHECK(assist_level_data.pas.efficiency.scale == 100, 11); /* Preserve launch grace. */
+#endif
+    run(3005);
 #ifndef BASELINE_PROBE
     CHECK(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE, 4);
+    CHECK(assist_level_data.pas.efficiency.launch & 0x80u, 12); /* 250 W activates below the 97% speed trim. */
 #endif
     uint8_t base = adaptive_pas_current();
-    CHECK(motor_current <= base, 5);
+    CHECK(base < 40 && motor_current <= base, 5);
+    /* 500 W also demonstrates a real command reduction on BBSHD, where the
+       five-percent trim at 250 W is smaller than one current-command step. */
+    g_config.assist_levels[0][1].torque_amplification_factor_x10 = 50;
+    reload_assist_params(); run(6000);
+#ifndef BASELINE_PROBE
+    CHECK(motor_current < adaptive_pas_current(), 13);
+#endif
     brake = true; run(5); CHECK(motor_current == 0, 6);
     brake = false; run(3000);
     voltage = g_config.low_cut_off_v * 10u; run(5); CHECK(motor_current == 0, 7);

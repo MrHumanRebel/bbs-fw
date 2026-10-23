@@ -53,7 +53,7 @@ for target in BBS02 BBSHD TSDZ2; do
     if [ "$target" != TSDZ2 ]; then "$test_dir/adaptive" shift; fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/efficiency_test.c -o "$test_dir/efficiency"
-    for scenario in load_hysteresis speed_target sensors comfort clock_mode slew; do
+    for scenario in budget_fraction clipped_budget real_budget_150 real_budget_250 real_budget_500 real_budget_750 load_hysteresis speed_target sensors comfort clock_mode slew; do
         "$test_dir/efficiency" "$scenario"
     done
 	if [ "$target" = TSDZ2 ]; then

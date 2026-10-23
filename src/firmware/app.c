@@ -593,11 +593,18 @@ static uint8_t efficiency_pas_current(uint8_t current) RAM_REENTRANT
             // experimental policy constants, not thresholds fitted to a factory map.
             uint16_t cadence = pas_get_cadence_rpm_x10();
             uint16_t speed = speed_sensor_get_rpm_x10();
+            // The unshaped PAS request is budget * clamp(cadence / 600, 1/4, 1).
+            // Its own budget fraction reaches 40% at 24 rpm and falls below 30%
+            // below 18 rpm. The level-relative alternative covers current clipping.
+            // This is a requested-demand proxy, never measured motor load. Cancelling
+            // the common budget factor avoids division and extra runtime state.
             if (cadence < EFFICIENCY_LOW_CADENCE_X10 &&
-                (uint16_t)current * 100u >= (uint16_t)assist_level_data.level.target_current_percent * 40u)
+                (cadence >= 240u ||
+                 (uint16_t)current * 5u >= (uint16_t)assist_level_data.level.target_current_percent * 2u))
                 assist_level_data.pas.efficiency.launch |= 0x80u;
             else if (cadence >= EFFICIENCY_LOW_CADENCE_X10 + 100u ||
-                (uint16_t)current * 100u < (uint16_t)assist_level_data.level.target_current_percent * 25u)
+                (cadence < 180u &&
+                 (uint16_t)current * 10u < (uint16_t)assist_level_data.level.target_current_percent * 3u))
                 assist_level_data.pas.efficiency.launch &= 0x3fu;
             if ((uint32_t)speed * 100u >= (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 97u ||
                 ((assist_level_data.pas.efficiency.launch & 0x80u) &&

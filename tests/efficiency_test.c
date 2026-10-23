@@ -3,13 +3,14 @@
 #include "pas_voltage_test.c"
 #undef main
 
-static void efficiency_setup(void)
+static void efficiency_setup(uint8_t budget_steps, uint8_t amps)
 {
     setup();
+    g_config.max_current_amps = amps;
     g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
     g_config.use_speed_sensor = true;
     g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY | ASSIST_FLAG_THROTTLE;
-    g_config.assist_levels[0][1].torque_amplification_factor_x10 = 100;
+    g_config.assist_levels[0][1].torque_amplification_factor_x10 = budget_steps;
     pedal_cadence = EFFICIENCY_LOW_CADENCE_X10 - 10;
     start();
 }
@@ -17,8 +18,101 @@ static void efficiency_setup(void)
 int main(int argc, char **argv)
 {
     assert(argc == 2);
-    efficiency_setup();
-    if (!strcmp(argv[1], "load_hysteresis"))
+    bool realistic_budget = !strncmp(argv[1], "real_budget_", 12);
+    bool budget_fraction = !strcmp(argv[1], "budget_fraction");
+    bool clipped_budget = !strcmp(argv[1], "clipped_budget");
+    uint8_t budget_steps = budget_fraction ? 25 : !strcmp(argv[1], "real_budget_150") ? 15 :
+        !strcmp(argv[1], "real_budget_250") ? 25 :
+        !strcmp(argv[1], "real_budget_500") ? 50 : 75;
+    uint8_t amps =
+#if defined(BBSHD)
+        30;
+#elif defined(TSDZ2)
+        20;
+#else
+        25;
+#endif
+    if (clipped_budget)
+    {
+#if defined(BBSHD)
+        budget_steps = 8;
+#elif defined(TSDZ2)
+        budget_steps = 5;
+#else
+        budget_steps = 7;
+#endif
+    }
+    efficiency_setup((realistic_budget || budget_fraction || clipped_budget) ? budget_steps : 100,
+        (realistic_budget || budget_fraction || clipped_budget) ? amps : 25);
+    if (budget_fraction)
+    {
+        wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 4 / 5;
+        pedal_cadence = 239; run(5000);
+        assert(!(assist_level_data.pas.efficiency.launch & 0x80u));
+        assert(assist_level_data.pas.efficiency.scale == 100);
+        pedal_cadence = 240; run(2000);
+        assert(assist_level_data.pas.efficiency.launch & 0x80u);
+        assert(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE);
+        pedal_cadence = 180; run(1000);
+        assert(assist_level_data.pas.efficiency.launch & 0x80u);
+        pedal_cadence = 179; run(2000);
+        assert(!(assist_level_data.pas.efficiency.launch & 0x80u));
+        assert(assist_level_data.pas.efficiency.scale == 100);
+    }
+    else if (clipped_budget)
+    {
+        /* Full-charge voltage permits this budget, but at 48 V the level's
+         * five-percent current ceiling clips its uncadenced request. */
+        g_config.assist_levels[0][1].target_current_percent = 5;
+        reload_assist_params();
+        wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 4 / 5;
+        pedal_cadence = 231;
+        assert(adaptive_pas_current() == 2); /* 40% of the attainable level current. */
+        run(5000);
+        assert(assist_level_data.pas.efficiency.launch & 0x80u);
+        assert(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE);
+        pedal_cadence = 150; run(2000);
+        assert(!(assist_level_data.pas.efficiency.launch & 0x80u));
+        assert(assist_level_data.pas.efficiency.scale == 100);
+    }
+    else if (realistic_budget)
+    {
+        /* At 80% of the speed ceiling, the separate 97% speed trim cannot mask
+         * the low-cadence/load gate. These are requested commands, not measured load. */
+        wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 4 / 5;
+        uint8_t base = adaptive_pas_current();
+        assert(voltage == 480 && assist_level_data.level.target_current_percent == 100);
+        if (budget_steps == 25)
+        {
+            assert(base < 40); /* All three 250 W profiles fail the old level-relative gate. */
+#if defined(BBS02)
+            assert(base == 11); /* Exact audited 48 V / 25 A / 34 rpm example. */
+#endif
+        }
+        run(2995); assert(assist_level_data.pas.efficiency.scale == 100);
+        assert(motor_current == base);
+        run(2000);
+        assert(assist_level_data.pas.efficiency.launch & 0x80u);
+        assert(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE);
+        assert(motor_current <= base);
+        assert((unsigned)motor_current * 100u >= (unsigned)base * EFFICIENCY_MIN_SCALE);
+        if (base >= 100u / (100u - EFFICIENCY_MIN_SCALE))
+            assert(motor_current < base);
+        else
+            assert(motor_current == base); /* A sub-step trim must not exceed the profile limit. */
+        printf("48 V / %u A / %u W: requested current %u%% -> %u%%, policy %u%%\n",
+            amps, budget_steps * 10u, base, motor_current, assist_level_data.pas.efficiency.scale);
+        pedal_cadence = 210; run(1000);
+        assert(assist_level_data.pas.efficiency.launch & 0x80u); /* Between enter/release fractions. */
+        pedal_cadence = 150; run(2000);
+        assert(!(assist_level_data.pas.efficiency.launch & 0x80u));
+        assert(assist_level_data.pas.efficiency.scale == 100); /* Quarter-budget floor releases shaping. */
+        pedal_cadence = EFFICIENCY_LOW_CADENCE_X10 - 10; run(2000);
+        assert(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE);
+        wheel_speed = 0; run(2000);
+        assert(assist_level_data.pas.efficiency.scale == 100 && motor_current == base);
+    }
+    else if (!strcmp(argv[1], "load_hysteresis"))
     {
         wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 4 / 5;
         uint8_t baseline = adaptive_pas_current();

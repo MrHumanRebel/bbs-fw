@@ -20,7 +20,28 @@ Adaptive Efficiency is an explicit PAS variant, separate from unchanged Adaptive
 | BBSHD | 40 rpm | 50 rpm | 95% |
 | TSDZ2 | 45 rpm | 55 rpm | 90% |
 
-After three seconds of valid demand, low-cadence shaping arms at requested load at least 40% of the level's current limit, and releases below 25%. It acts only above 75% of the configured speed ceiling. Near 97% of that ceiling the same bounded trim reduces unnecessary demand regardless of cadence. Below 93%, the multiplier recovers unless the sustained low-cadence condition still applies. Each eligible 100 ms interval changes it by one percentage point, with no catch-up steps. Positive current reductions round down, preserving the profile's minimum multiplier even with coarse current resolution. Missing configured wheel speed falls back to unshaped Adaptive Power; missing pulses while standing cannot trigger a low-speed derate. Hill starts and low-speed climbing therefore retain the existing budget.
+After three seconds of valid demand, low-cadence shaping arms when the requested fraction of its own PAS watt budget reaches 40%, or when the unshaped current command reaches 40% of the independent level current ceiling. The alternative preserves operation when the current ceiling clips the full watt budget. It releases below 30% on both request references, or at the profile's cadence-release threshold. The 30% release point is above the 25% launch floor so a lightly requested quarter-budget command can release the hysteresis. It acts only above 75% of the configured speed ceiling. Near 97% of that ceiling the same bounded trim reduces unnecessary demand regardless of cadence. Below 93%, the multiplier recovers unless the sustained low-cadence condition still applies. Each eligible 100 ms interval changes it by one percentage point, with no catch-up steps. Positive current reductions round down, preserving the profile's minimum multiplier even with coarse current resolution. Missing configured wheel speed falls back to unshaped Adaptive Power; missing pulses while standing cannot trigger a low-speed derate. Hill starts and low-speed climbing therefore retain the existing budget.
+
+The budget fraction is already defined by `clamp(cadence_x10 / 600, 1/4, 1)`.
+Thus its 40% entry condition is `cadence_x10 >= 240`, and its below-30% release
+condition is `cadence_x10 < 180`. The positive-command check remains mandatory.
+Factoring out the common watt budget avoids new divisions, buffers or state.
+The level-current comparisons reduce exactly to `current * 5 >= level * 2`
+and `current * 10 < level * 3`; their largest valid product is 1000, within
+16 bits. This is an unshaped **request fraction before whole-percent current
+quantization**, not measured electrical/mechanical motor load. It does not imply
+that two motors or two budgets have identical physical efficiency.
+
+The audited 48 V / 25 A / 250 W / 34 rpm request is 11% current: the old
+40%-of-level gate never armed at a 100% level ceiling. The new budget-relative
+route arms after the existing launch grace, still requiring the original speed
+condition before any trim. Tests isolate it at 80% of the speed ceiling, below
+the independent 97% speed-trim route. BBS02B then commands 10% current. At
+48 V / 30 A, BBSHD also arms with a 250 W budget but its 5% trim of an 11%
+command is smaller than one current step; the command stays 11%. At 500 W it
+changes 22% to 21%. Keeping the existing trim bound takes priority over rounding
+that small correction up. No physical efficiency gain follows from these
+command-only examples.
 
 This is an efficiency-aware load-management hypothesis, not proof of a physical optimum. It cannot identify gradient, aerodynamic drag, gearing or human contribution. The selected speed remains the existing safety ceiling, including its original soft approach; it is not an independently guaranteed cruise-speed setpoint. For 100 km/h global and 20% level speed, that ceiling is 20 km/h. Original display/global speed constraints still apply. The policy can lower speed or change rider effort in some conditions; no efficiency gain is established by that change alone.
 

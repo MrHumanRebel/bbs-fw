@@ -72,11 +72,17 @@ verified compatible STC/UART hardware, which profile selection cannot detect.
 
 The base watt budget, cadence envelope and all current/speed/protection ceilings
 remain. After a three-second launch grace, a small bounded current trim responds
-to low cadence and sustained requested load, with hysteresis. It acts only above
+to low cadence and sustained requested demand, with hysteresis. Activation uses
+40% of this level's own cadence-shaped watt budget, or 40% of the level current
+ceiling when that ceiling is the attainable reference. Release uses 30% on both
+references. These are requested-command proxies, not measured motor load. It acts only above
 75% of the configured speed ceiling; near 97% it also trims demand regardless of
 cadence, recovering below 93% when low-cadence derating is inactive. BBS02B and
 TSDZ2 retain at least 90% of the base request; BBSHD retains at least 95%. Coarse
 current reductions round down rather than erasing a positive one-percent command.
+Very small corrections can round to no current change: BBSHD at 48 V / 30 A,
+250 W and 39 rpm arms its 5% trim, but an 11% current command remains 11%; at
+500 W it changes 22% to 21%. The profile's trim bound is not rounded upward.
 Low-speed hill starts retain the base budget. Missing configured wheel speed
 falls back to unshaped Adaptive Power; invalid cadence, voltage or the existing
 TSDZ2 torque-sensor fault indication produces zero experimental PAS demand.

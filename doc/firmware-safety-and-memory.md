@@ -140,9 +140,9 @@ prevent static-RAM growth.
 
 | Build target / selectable profile | Flash before / after / delta | Static RAM before / after | Linker stack before / after |
 | --- | --- | --- | --- |
-| BBS02 / BBS02B | 25,772 / 27,913 / +2,141 bytes | XRAM 861 / 861 bytes | 156 / 156 bytes available |
-| BBSHD / BBSHD | 27,328 / 29,485 / +2,157 bytes | XRAM 875 / 875 bytes | 144 / 144 bytes available |
-| TSDZ2 / TSDZ2 | Full image 15,464 / 16,669 / +1,205 bytes; CODE 14,733 / 15,938 | DATA 581 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
+| BBS02 / BBS02B | 25,772 / 27,914 / +2,142 bytes | XRAM 861 / 861 bytes | 156 / 156 bytes available |
+| BBSHD / BBSHD | 27,328 / 29,486 / +2,158 bytes | XRAM 875 / 875 bytes | 144 / 144 bytes available |
+| TSDZ2 / TSDZ2 | Full image 15,464 / 16,673 / +1,209 bytes; CODE 14,733 / 15,942 | DATA 581 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
 
 Flash increases to implement the new control policy, fixed-point target tracker,
 comfort ceiling and schema validation/migration. Configuration remains 156 bytes;
@@ -161,26 +161,42 @@ peak stack requirement or the 5 ms application deadline. STM8 simulation sets
 SP to the S105's actual 0x07ff RAM top and keeps overflow checking enabled with
 a conservative 0x03ff lower boundary.
 
-The complete 101-shape offline probe recorded these stack extensions above its
-entry marker (the fixture and main frame are outside this measurement):
+### Low-budget activation correction relative to `3a164c3`
 
-| Target | Baseline probe stack / feature probe stack / delta |
-| --- | --- |
-| BBS02 | 46 / 33 / −13 bytes |
-| BBSHD | 46 / 33 / −13 bytes |
-| TSDZ2 | 72 / 74 / +2 bytes |
+The audit regression reproduces the old inactive gate at 250 W on all three
+profiles. It now compares the known fraction of the configured PAS watt request,
+with a current-ceiling alternative when that ceiling clips the attainable budget.
+No division, new state or protocol/EEPROM change is needed. The existing flash
+budgets remain unchanged and all native builds satisfy them.
 
-A separate identical three-shape timing workload (`--timing-sample`, smoothness
-0, 50 and 100 plus the app-level safety scenarios) produced these emulator clock
-counts. They compare software workloads, not motor efficiency or real controller
-deadline margins. The baseline skips the new profile assertion but executes the
-same request and mocked safety sequence.
+| Target | Flash at audit / corrected / delta | Static RAM delta | Linker stack-capacity delta |
+| --- | --- | --- | --- |
+| BBS02 | 27,913 / 27,914 / +1 byte | 0 | 0 |
+| BBSHD | 29,485 / 29,486 / +1 byte | 0 | 0 |
+| TSDZ2 | Image 16,669 / 16,673 / +4 bytes; CODE 15,938 / 15,942 | 0 | 0 |
 
-| Target | Baseline simulator clocks | Feature simulator clocks |
-| --- | ---: | ---: |
-| BBS02 | 1,261,840,140 | 1,196,627,292 |
-| BBSHD | 1,263,974,208 | 1,197,626,628 |
-| TSDZ2 | 21,946,869 | 19,313,740 |
+The updated full 101-shape MCU probe uses 250 W and 500 W PAS budgets and
+platform-valid 25 A / 30 A / 20 A current settings for its app-level cases.
+The same source harness was run against `3a164c3` and the corrected application;
+the baseline skips only the assertions for the newly corrected activation.
+The main/fixture frame and interrupt stack are outside these stack-extension
+measurements. Linker capacity is unchanged, and no physical peak-stack claim is
+made.
+
+| Target | Audit probe stack / corrected probe stack / delta | Audit / corrected simulator clocks |
+| --- | --- | --- |
+| BBS02 | 33 / 31 / −2 bytes | 2,041,489,896 / 2,042,271,852 |
+| BBSHD | 33 / 31 / −2 bytes | 2,042,622,636 / 2,043,313,008 |
+| TSDZ2 | 74 / 74 / 0 bytes | 31,104,896 / 31,102,814 |
+
+Clock counts compare finite software workloads, not physical motor efficiency or
+real controller deadline margins. Host regressions additionally cover 150, 250,
+500 and 750 W on every profile, exact 24 rpm / 18 rpm hysteresis boundaries,
+current-clipped budgets, launch grace and low-speed recovery. In particular,
+BBSHD's 5% soft trim can arm at 250 W without changing an 11% command, because
+that correction is smaller than the existing one-percent command resolution.
+At 500 W the same profile demonstrably changes 22% to 21%. These are requested
+commands in simulation, not measured battery or shaft power.
 
 ## Verification limits
 
