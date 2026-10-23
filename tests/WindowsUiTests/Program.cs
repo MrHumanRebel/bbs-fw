@@ -198,6 +198,9 @@ internal static class Program
             vm.ConfigVm.GetConfig().Validate();
             var connected = typeof(ConnectionViewModel).GetMethod("OnConnected", BindingFlags.Instance | BindingFlags.NonPublic);
             var disconnected = typeof(ConnectionViewModel).GetMethod("OnDisconnected", BindingFlags.Instance | BindingFlags.NonPublic);
+            // Controller-write guards must be exercised with a matching profile;
+            // an intentional hardware mismatch is covered by portable validation tests.
+            vm.ConfigVm.EfficiencyProfile = BBSFW.Model.Configuration.MotorEfficiencyProfile.BBSHD;
             void Connect() => connected.Invoke(vm.ConnectionVm, new object[] { BBSFW.Model.BbsfwConnection.Controller.BBSHD, "2.0.0", BBSFW.Model.Configuration.CurrentVersion });
             Connect();
             tabs.SelectedIndex = 0; Layout(new Size(1000, 650)); Pump();

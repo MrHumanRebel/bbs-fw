@@ -158,9 +158,9 @@ namespace BBSFW.ViewModel
         }
         public string EfficiencyProfileDescription => EfficiencyProfile switch
         {
-            Configuration.MotorEfficiencyProfile.BBS02B => "Experimental: 93-point factory sweep, revision unverified; related-family parameters only. Verify BBS02B STC/UART compatibility before flashing. Low-cadence shaping floor: 90% of PAS demand.",
-            Configuration.MotorEfficiencyProfile.BBSHD => "Experimental: four factory landmarks and independent BBSHD sample parameters; no calibrated efficiency map. Low-cadence shaping floor: 95% of PAS demand.",
-            _ => "Experimental: TSDZ2 motor references; nine external TSDZ2B observations are not TSDZ2 calibration. Requires a working torque sensor. Low-cadence shaping floor: 90% of PAS demand."
+            Configuration.MotorEfficiencyProfile.BBS02B => "Research references: 93-point factory sweep, revision unverified; related-family parameters only. Verify BBS02B STC/UART compatibility before flashing. Low-cadence shaping floor: 90% of PAS demand.",
+            Configuration.MotorEfficiencyProfile.BBSHD => "Research references: four factory landmarks and independent BBSHD sample parameters; no calibrated efficiency map. Low-cadence shaping floor: 95% of PAS demand.",
+            _ => "Research references: TSDZ2 motor references; nine external TSDZ2B observations are not TSDZ2 calibration. Requires a working torque sensor. Low-cadence shaping floor: 90% of PAS demand."
         };
 
         public bool UseVoltageCompensation

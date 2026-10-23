@@ -74,7 +74,9 @@ internal static class EfficiencyTests
         check(!level.IsPasAssistEfficiencyVariant && !level.IsPasAssistVariableVariant, "leaving efficiency clears both reused variant bits");
         check(!new Configuration().AdaptiveComfort, "comfort defaults OFF");
         check(level.AssistPasVariantOptions.Count(x => x.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency) == 1 &&
-            level.AssistPasVariantOptions.All(x => x.Name != "Adaptive Power" && !x.Name.Contains("experimental")),
+            level.AssistPasVariantOptions.All(x => x.Name != "Adaptive Power" && !x.Name.Contains("experimental", StringComparison.OrdinalIgnoreCase)) &&
+            ConfigurationViewModel.EfficiencyProfiles.All(profile =>
+                !new ConfigurationViewModel { EfficiencyProfile = profile }.EfficiencyProfileDescription.Contains("experimental", StringComparison.OrdinalIgnoreCase)),
             "only Adaptive Efficiency is selectable, without an experimental label");
         foreach (var controller in new[] { BbsfwConnection.Controller.BBS02, BbsfwConnection.Controller.BBSHD, BbsfwConnection.Controller.TSDZ2 })
         {
