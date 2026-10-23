@@ -6,6 +6,22 @@ trap 'rm -rf "$test_dir"' EXIT HUP INT TERM
 
 for target in BBS02 BBSHD TSDZ2; do
 	printf '\nTesting %s\n' "$target"
+    cc -std=c99 -D"$target" -I src/firmware tests/pas_sensor_test.c -lm -o "$test_dir/pas_sensor"
+    for scenario in spacing startup recovery boundary direction rejected_timeout stop_restart; do "$test_dir/pas_sensor" "$scenario"; done
+    cc -std=c99 -D"$target" -I src/firmware tests/temperature_sensor_test.c -lm -o "$test_dir/temperature"
+    for scenario in disabled startup_fault very_hot ntc ptc; do "$test_dir/temperature" "$scenario"; done
+    if [ "$target" != TSDZ2 ]; then
+        cc -std=c99 -D"$target" -I src/firmware tests/factory_thermal_test.c -lm -o "$test_dir/factory_thermal"
+        "$test_dir/factory_thermal" controller_only
+        "$test_dir/factory_thermal" controller_startup
+        if [ "$target" = BBSHD ]; then
+            for scenario in ntc ptc absent startup startup_ptc; do "$test_dir/factory_thermal" "$scenario"; done
+        fi
+    fi
+    cc -std=c99 -D"$target" -I src/firmware tests/battery_soc_test.c -o "$test_dir/soc"
+    for scenario in map continuous actual_current transient invalid_wrap; do "$test_dir/soc" "$scenario"; done
+    cc -std=c99 -D"$target" -DTEST_SW102_MAP -I src/firmware tests/battery_soc_test.c -o "$test_dir/soc_sw102"
+    "$test_dir/soc_sw102" map
 	cc -std=c99 -D"$target" -ffunction-sections -fdata-sections -I src/firmware \
 		tests/display_current_test.c -Wl,--gc-sections -lm -o "$test_dir/current"
 	"$test_dir/current"
@@ -29,10 +45,10 @@ for target in BBS02 BBSHD TSDZ2; do
     "$test_dir/safety" thermal_curve legacy
     "$test_dir/safety" zero_pas legacy
     for mode in legacy adaptive adaptive_pas efficiency efficiency_comfort variable cruise throttle walk; do
-        for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" "$mode"; done
+        for scenario in thermal sensor_controller sensor_motor cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" "$mode"; done
     done
     if [ "$target" = TSDZ2 ]; then
-        for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" torque; done
+        for scenario in thermal sensor_controller sensor_motor cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" torque; done
     fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/protection_release_test.c -o "$test_dir/release"
@@ -46,7 +62,7 @@ for target in BBS02 BBSHD TSDZ2; do
         "$test_dir/release" shift_wrap held
     fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
-        -I src/firmware tests/adaptive_power_test.c -o "$test_dir/adaptive"
+        -I src/firmware tests/pas_budget_test.c -o "$test_dir/adaptive"
     for scenario in budget voltage coast compensation throttle profiles legacy_ramp retarget_plateau moving_ramp walk brake speed thermal lvc; do
         "$test_dir/adaptive" "$scenario"
     done
@@ -58,7 +74,7 @@ for target in BBS02 BBSHD TSDZ2; do
     done
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/efficiency_refinement_test.c -o "$test_dir/refinement"
-    for scenario in speed_curve speed_recovery synthetic_ride throttle lvc_recovery lvc_hysteresis lvc_legacy lvc_scope_efficiency lvc_scope_legacy lvc_scope_adaptive lvc_scope_throttle jitter; do
+    for scenario in speed_curve speed_recovery synthetic_ride throttle lvc_recovery lvc_hysteresis lvc_legacy lvc_scope_efficiency lvc_scope_legacy lvc_scope_throttle jitter; do
         "$test_dir/refinement" "$scenario"
     done
 	if [ "$target" = TSDZ2 ]; then

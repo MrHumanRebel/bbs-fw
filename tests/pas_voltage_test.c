@@ -12,13 +12,16 @@ config_t g_config;
 static uint32_t now;
 static uint16_t voltage = 480, wheel_speed, pedal_cadence = MAX_CADENCE_RPM_X10;
 static uint8_t motor_current, motor_cadence, throttle;
+static uint16_t measured_battery_current;
 static uint16_t motor_faults;
 static bool motor_enabled;
 static bool pedaling = true, backwards, brake, shift;
 static int16_t temperature;
+static bool controller_temperature_failed, motor_temperature_failed;
 static bool torque_valid = true;
 uint32_t system_ms(void) { return now; }
 uint16_t motor_get_battery_voltage_x10(void) { return voltage; }
+uint16_t motor_get_battery_current_x10(void) { return measured_battery_current; }
 uint8_t motor_get_target_current(void) { return motor_current; }
 void motor_set_target_current(uint8_t value) { motor_current = value; }
 void motor_set_target_speed(uint8_t value) { motor_cadence = value; }
@@ -41,8 +44,8 @@ uint16_t torque_sensor_get_nm_x100(void) { return 1000; }
 bool torque_sensor_ok(void) { return torque_valid; }
 bool brake_is_activated(void) { return brake; }
 bool shift_sensor_is_activated(void) { return shift; }
-int16_t temperature_contr_x100(void) { return temperature; }
-int16_t temperature_motor_x100(void) { return temperature; }
+int16_t temperature_contr_x100(void) RAM_REENTRANT { return controller_temperature_failed ? TEMPERATURE_SENSOR_FAULT_X100 : temperature; }
+int16_t temperature_motor_x100(void) { return motor_temperature_failed ? TEMPERATURE_SENSOR_FAULT_X100 : temperature; }
 bool eventlog_is_enabled(void) { return false; }
 void eventlog_write(uint8_t event) { (void)event; }
 void eventlog_write_data(uint8_t event, int16_t value) { (void)event; (void)value; }

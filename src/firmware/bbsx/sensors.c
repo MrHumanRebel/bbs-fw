@@ -105,7 +105,7 @@ static int16_t thermistor_ptc_bbshd_calculate_temperature(int32_t R_x100)
 		// use minimum value
 		return bbshd_ptc_lut[0].y;
 	}
-	else if (R_x100 > bbshd_ptc_lut[BBSHD_PTC_LUT_SIZE - 1].x)
+	else if (R_x100 >= bbshd_ptc_lut[BBSHD_PTC_LUT_SIZE - 1].x)
 	{
 		// use maximum value
 		return bbshd_ptc_lut[BBSHD_PTC_LUT_SIZE - 1].y;
@@ -264,7 +264,7 @@ bool torque_sensor_ok()
 }
 
 
-int16_t temperature_contr_x100()
+int16_t temperature_contr_x100() RAM_REENTRANT
 {
 	const float R1 = 5100.f;
 	const float invBeta = 1.f / 3600.f;
@@ -272,13 +272,19 @@ int16_t temperature_contr_x100()
 
 	if (g_config.use_temperature_sensor & TEMPERATURE_SENSOR_CONTR)
 	{
+        // The existing enable bit means that this sensor is installed. Check
+        // the raw rails before filtering, divider math or thermistor detection.
+        uint16_t raw = adc_get_temperature_contr();
+        if (raw <= 4u || raw >= 1022u)
+            return TEMPERATURE_SENSOR_FAULT_X100;
+
 		if (adc_contr_x100 == 0)
 		{
-			adc_contr_x100 = adc_get_temperature_contr() * 100l;
+			adc_contr_x100 = (int32_t)raw * 100l;
 		}
 		else
 		{
-			adc_contr_x100 = EXPONENTIAL_FILTER(adc_contr_x100, adc_get_temperature_contr() * 100l, 4);
+			adc_contr_x100 = EXPONENTIAL_FILTER(adc_contr_x100, (int32_t)raw * 100l, 4);
 		}
 
 		if (adc_contr_x100 != 0)
@@ -302,15 +308,21 @@ int16_t temperature_motor_x100()
 
 	if (g_config.use_temperature_sensor & TEMPERATURE_SENSOR_MOTOR)
 	{
+        // The existing enable bit means that this sensor is installed. Check
+        // the raw rails before filtering, divider math or thermistor detection.
+        uint16_t raw = adc_get_temperature_motor();
+        if (raw <= 4u || raw >= 1022u)
+            return TEMPERATURE_SENSOR_FAULT_X100;
+
 		bool first = false;
 		if (adc_motor_x100 == 0)
 		{
 			first = true;
-			adc_motor_x100 = adc_get_temperature_motor() * 100l;
+			adc_motor_x100 = (int32_t)raw * 100l;
 		}
 		else
 		{
-			adc_motor_x100 = EXPONENTIAL_FILTER(adc_motor_x100, adc_get_temperature_motor() * 100l, 4);
+			adc_motor_x100 = EXPONENTIAL_FILTER(adc_motor_x100, (int32_t)raw * 100l, 4);
 		}
 
 		if (adc_motor_x100 != 0)
@@ -372,7 +384,9 @@ void sensors_timer0_isr() // runs every 100us, see timers.c
 		bool pas1 = GET_PIN_STATE(PIN_PAS1);
 		bool pas2 = GET_PIN_STATE(PIN_PAS2);
 
-		if (pas1 && !pas_prev1 /* && pas_period_counter > PAS_SENSOR_MIN_PULSE_MS_X10 */)
+		// Rejected edges must advance the timeout, without changing cadence,
+        // pulse count or direction. Raw edge history still updates below.
+        if (pas1 && !pas_prev1 && pas_period_counter > PAS_SENSOR_MIN_PULSE_MS_X10)
 		{
 			pas_pulse_counter++;
 

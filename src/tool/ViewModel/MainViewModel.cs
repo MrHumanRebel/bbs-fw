@@ -220,6 +220,8 @@ namespace BBSFW.ViewModel
                 $"Battery: {configuration.LowCutoffVolts}–{configuration.MaxBatteryVolts:0.##} V\n\n" +
                 "This replaces the settings stored in the controller. Keep the driven wheel clear. " +
                 "Restart the controller before using the new settings.";
+            string thermalWarning = configuration.GetMotorTemperatureWarning(ConnectionVm.Controller);
+            if (!string.IsNullOrEmpty(thermalWarning)) message += "\n\n" + thermalWarning;
             try
             {
                 await ControllerOperations.RunWrite("Write controller configuration?", message,

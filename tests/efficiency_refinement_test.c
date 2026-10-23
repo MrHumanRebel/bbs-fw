@@ -191,8 +191,6 @@ int main(int argc, char **argv)
         uint8_t cap = establish_sag();
         if (!strcmp(argv[1], "lvc_scope_legacy"))
             g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS;
-        else if (!strcmp(argv[1], "lvc_scope_adaptive"))
-            g_config.assist_levels[0][1].flags &= ~ASSIST_FLAG_PAS_VARIABLE;
         else if (!strcmp(argv[1], "lvc_scope_throttle"))
             throttle = 100;
         else assert(!strcmp(argv[1], "lvc_scope_efficiency"));
@@ -200,7 +198,7 @@ int main(int argc, char **argv)
         voltage = 480; run(12000);
         uint8_t recovered = sample_lvc(false, 5);
         if (!strcmp(argv[1], "lvc_scope_efficiency")) assert(recovered == 100);
-        else assert(recovered == cap); /* Legacy, Adaptive Power and throttle stay downward-only. */
+        else assert(recovered == cap); /* Legacy PAS and throttle stay downward-only. */
     }
     else if (!strcmp(argv[1], "lvc_legacy"))
     {

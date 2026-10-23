@@ -22,12 +22,14 @@ static uint32_t motor_disabled_at_ms;
 static RAM_BOOL first_reading_done;
 
 // Keep this independent of the SOC estimate, which only updates at idle.
+// SOC now also follows sustained loaded voltage conservatively; control users
+// still consume this unchanged, independent voltage filter.
 #define VOLTAGE_FILTER_INTERVAL_MS 125u
 #define VOLTAGE_FILTER_DIVISOR 16
 static int32_t filtered_voltage_x1000;
 static uint32_t last_voltage_sample_ms;
 
-static void update_filtered_voltage()
+static void update_filtered_voltage() RAM_REENTRANT
 {
 	uint16_t voltage_x10 = motor_get_battery_voltage_x10();
 	uint32_t now = system_ms();
@@ -84,9 +86,13 @@ For example, if the maximum battery voltage is 58.8V and the low cutoff voltage 
 - Full LVC limiting will occur at 0% SOC, so: 43.3V
 */
 
-static uint8_t compute_battery_percent()
+// The unused high bit stores quiet/loaded timing state, never a published value.
+#define SOC_LOADED 0x80u
+#define SOC_PERCENT_MASK 0x7fu
+#define SOC_LOADED_UPDATE_MS 10000u
+
+static uint8_t compute_battery_percent(uint16_t value_x100v) RAM_REENTRANT
 {
-	int16_t value_x100v = motor_get_battery_voltage_x10() * 10l;
 	int16_t percent = (int16_t)MAP32(value_x100v, battery_empty_x100v, battery_full_x100v, 0, 100);
 
 	return (uint8_t)CLAMP(percent, 0, 100);
@@ -153,48 +159,62 @@ void battery_init()
 	battery_empty_x100v = battery_min_voltage_x100v + battery_empty_pad_x100v;
 }
 
+static void update_soc(void) RAM_REENTRANT
+{
+    uint16_t voltage_x10 = motor_get_battery_voltage_x10();
+    uint32_t now = system_ms();
+    if (voltage_x10 == 0 || voltage_x10 > 1000u || battery_full_x100v <= battery_empty_x100v)
+    {
+        motor_disabled_at_ms = now; // Invalid samples cannot satisfy the quiet dwell.
+        return;
+    }
+    // A zero command alone is not evidence that battery current has settled.
+    if ((motor_get_target_current() > 0 || motor_get_battery_current_x10() > 5u) !=
+        ((battery_percent & SOC_LOADED) != 0))
+    {
+        battery_percent ^= SOC_LOADED;
+        motor_disabled_at_ms = now;
+    }
+    if (!first_reading_done)
+    {
+        battery_percent = (battery_percent & SOC_LOADED) | compute_battery_percent(voltage_x10 * 10u);
+        first_reading_done = true;
+        motor_disabled_at_ms = now;
+        return;
+    }
+    if ((uint32_t)(now - motor_disabled_at_ms) >=
+        ((battery_percent & SOC_LOADED) ? SOC_LOADED_UPDATE_MS : BATTERY_NO_LOAD_DELAY_MS))
+    {
+        motor_disabled_at_ms = now;
+        if (battery_percent & SOC_LOADED)
+        {
+            // Unknown chemistry/impedance: do not invent an I*R correction.
+            // Follow sustained discharge by at most one percent per ten seconds;
+            // load-step sag and voltage rebound cannot produce upward estimates.
+            if (compute_battery_percent(battery_get_filtered_voltage_x100()) < (battery_percent & SOC_PERCENT_MASK))
+                --battery_percent;
+        }
+        else
+            battery_percent = compute_battery_percent(voltage_x10 * 10u);
+    }
+}
+
 void battery_process()
 {
-	update_filtered_voltage();
-
-	if (!first_reading_done)
-	{
-		if (motor_get_battery_voltage_x10() > 0)
-		{
-			battery_percent = compute_battery_percent();
-			first_reading_done = true;
-		}
-	}
-	else
-	{
-		uint8_t target_current = motor_get_target_current();
-
-		if (motor_disabled_at_ms == 0 && target_current == 0)
-		{
-			motor_disabled_at_ms = system_ms();
-		}
-		else if (target_current > 0)
-		{
-			motor_disabled_at_ms = 0;
-		}
-
-		if (target_current == 0 && (system_ms() - motor_disabled_at_ms) > BATTERY_NO_LOAD_DELAY_MS)
-		{
-			battery_percent = compute_battery_percent();
-		}
-	}
+    update_filtered_voltage();
+    update_soc();
 }
 
 uint8_t battery_get_percent()
 {
-	return battery_percent;
+	return battery_percent & SOC_PERCENT_MASK;
 }
 
 uint8_t battery_get_mapped_percent()
 {
 #if (BATTERY_PERCENT_MAP == BATTERY_PERCENT_MAP_SW102)
-	return map_percent_sw102(battery_percent);
+	return map_percent_sw102(battery_get_percent());
 #else
-	return battery_percent;
+	return battery_get_percent();
 #endif
 }

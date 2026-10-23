@@ -79,7 +79,7 @@ typedef struct
 	uint8_t max_speed_percent;
 
 	// 10 => 1.0: 100w human power gives and additional 100w motor power
-    // Adaptive Power instead interprets this byte as its PAS budget in 10 W steps.
+    // Adaptive Efficiency instead interprets this byte as its PAS budget in 10 W steps.
 	uint8_t torque_amplification_factor_x10;
 }  assist_level_t;
 

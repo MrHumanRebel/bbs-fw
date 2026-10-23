@@ -60,8 +60,9 @@ internal static class Program
         var window = new MainWindow();
         int confirmations = 0;
         bool approveWrites = false;
+        string lastConfirmation = null;
         Action onConfirmation = null;
-        var vm = new MainViewModel((_, _) => { ++confirmations; onConfirmation?.Invoke(); return approveWrites; });
+        var vm = new MainViewModel((_, message) => { ++confirmations; lastConfirmation = message; onConfirmation?.Invoke(); return approveWrites; });
         window.DataContext = vm;
         vm.ConfigVm.MaxCurrentAmps = 25;
         vm.ConfigVm.MaxBatteryVolts = 58.8f;
@@ -83,9 +84,10 @@ internal static class Program
         vm.ConfigVm.PasKeepCurrentCadenceRpm = 40;
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
+        vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.All;
         var adaptiveLevel = vm.ConfigVm.StandardAssistLevels[1];
-        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
-        adaptiveLevel.AdaptivePowerWatts = 250;
+        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency);
+        adaptiveLevel.PasBudgetWatts = 250;
         var tabs = (TabControl)window.FindName("WorkspaceTabs");
         // Hosted Windows desktops cap top-level HWNDs near 1024x768. Exercise
         // the actual WPF content offscreen at exact logical viewport sizes.
@@ -151,20 +153,35 @@ internal static class Program
                         }
                         if (index == 3)
                         {
-                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "AdaptivePowerBudget");
-                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Power exposes a per-level watt budget");
+                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "PasBudget");
+                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Efficiency exposes a per-level watt budget");
                             var warning = descendants.OfType<TextBlock>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveQuantizationWarning");
-                            adaptiveLevel.AdaptivePowerWatts = 10; Pump();
+                            adaptiveLevel.PasBudgetWatts = 10; Pump();
                             Check(warning.Text.Contains("zero current") && warning.Text.Contains("throttle"), "Adaptive PAS shows quantization and throttle warnings");
-                            adaptiveLevel.AdaptivePowerWatts = 250;
+                            adaptiveLevel.PasBudgetWatts = 250;
                             var preview = descendants.OfType<ResponseChart>().First(c => c.Mode == "Adaptive");
-                            Check(preview.BudgetPower == adaptiveLevel.AdaptivePowerWatts, "adaptive preview binds to the selected level budget");
-                            adaptiveLevel.AdaptivePowerWatts = 350; Pump();
+                            Check(preview.BudgetPower == adaptiveLevel.PasBudgetWatts, "adaptive preview binds to the selected level budget");
+                            adaptiveLevel.PasBudgetWatts = 350; Pump();
                             Check(preview.BudgetPower == 350, "adaptive watt edits update the native preview");
-                            adaptiveLevel.AdaptivePowerWatts = 250;
+                            adaptiveLevel.PasBudgetWatts = 250;
                         }
                         if (index == 2)
                         {
+                            var temperature = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "TemperatureSensor");
+                            var thermalWarning = descendants.OfType<TextBlock>().First(t => AutomationProperties.GetAutomationId(t) == "MotorTemperatureWarning");
+                            // Detached offscreen content has no PresentationSource; inspect
+                            // the bound card Visibility and measured content, not IsVisible.
+                            var thermalWarningCard = (Border)thermalWarning.Parent;
+                            Check(thermalWarningCard.Visibility == Visibility.Visible && thermalWarning.ActualHeight > 0 &&
+                                thermalWarning.Text.Contains("presence is unverified") &&
+                                thermalWarning.Text.Contains("0x14"), "All visibly warns about unverified factory motor sensing in either theme");
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.Controller; Pump(); Layout(size);
+                            Check(thermalWarningCard.Visibility == Visibility.Collapsed && !vm.ConfigVm.HasMotorTemperatureWarning,
+                                "controller-only stock hardware does not show a missing optional sensor warning");
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.All; Pump(); Layout(size);
+                            Check(thermalWarningCard.Visibility == Visibility.Visible && thermalWarning.ActualHeight > 0 &&
+                                vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
+                                "explicit All selection preserves protection and restores the visible warning");
                             var profile = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "EfficiencyProfile");
                             Check(profile.Items.Count == 3 && profile.Items.Cast<object>().Select(x => x.ToString()).SequenceEqual(new[] { "BBS02B", "BBSHD", "TSDZ2" }), "System exposes exactly three efficiency profiles");
                             var comfort = descendants.OfType<CheckBox>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveComfort");
@@ -198,6 +215,9 @@ internal static class Program
             vm.ConfigVm.GetConfig().Validate();
             var connected = typeof(ConnectionViewModel).GetMethod("OnConnected", BindingFlags.Instance | BindingFlags.NonPublic);
             var disconnected = typeof(ConnectionViewModel).GetMethod("OnDisconnected", BindingFlags.Instance | BindingFlags.NonPublic);
+            // Controller-write guards must be exercised with a matching profile;
+            // an intentional hardware mismatch is covered by portable validation tests.
+            vm.ConfigVm.EfficiencyProfile = BBSFW.Model.Configuration.MotorEfficiencyProfile.BBSHD;
             void Connect() => connected.Invoke(vm.ConnectionVm, new object[] { BBSFW.Model.BbsfwConnection.Controller.BBSHD, "2.0.0", BBSFW.Model.Configuration.CurrentVersion });
             Connect();
             tabs.SelectedIndex = 0; Layout(new Size(1000, 650)); Pump();
@@ -206,7 +226,12 @@ internal static class Program
             var resetButton = buttons.First(b => AutomationProperties.GetAutomationId(b) == "ResetConfiguration");
             Check(writeButton.IsEnabled && resetButton.IsEnabled, "controller actions enable after connecting");
             writeButton.Command.Execute(null);
+            Check(lastConfirmation.Contains("presence is unverified") && lastConfirmation.Contains("0x14") &&
+                vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
+                "every All write confirmation includes the hardware warning and rejection preserves motor protection");
+            vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.Controller;
             vm.WriteFlashCommand.Execute(null);
+            Check(!lastConfirmation.Contains("presence is unverified"), "controller-only write confirmation does not require an optional thermistor");
             resetButton.Command.Execute(null);
             vm.ResetFlashCommand.Execute(null);
             vm.CalibrationVm.MeasuredBatteryVolts = 50;
@@ -215,10 +240,12 @@ internal static class Program
             Check(confirmations == 6 && !vm.ControllerOperations.IsBusy, "buttons, shared menu commands and both calibration writes all ask and honor rejection");
             long previousSession = vm.ConnectionVm.SessionId;
             approveWrites = true;
+            vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.All;
             onConfirmation = () => { disconnected.Invoke(vm.ConnectionVm, null); Connect(); };
             vm.WriteFlashCommand.Execute(null);
             Check(confirmations == 7 && vm.ConnectionVm.SessionId != previousSession && !vm.ControllerOperations.IsBusy,
                 "the real connection lifecycle invalidates approved writes after reconnecting in the dialog");
+            Check(lastConfirmation.Contains("0x14"), "repeated All writes require a fresh hardware warning");
             disconnected.Invoke(vm.ConnectionVm, null);
             vm.WriteFlashCommand.Execute(null);
             Check(confirmations == 7 && !vm.CanUseController, "disconnected Write cannot prompt or send");

@@ -48,6 +48,10 @@ jobs:
         run: |
           python3 tests/run_target_conversion.py --controller "$CONTROLLER"
           python3 tests/run_target_control.py --controller "$CONTROLLER"
+          SENSOR_DIRECTORY=bbsx
+          if [ "$CONTROLLER" = TSDZ2 ]; then SENSOR_DIRECTORY=tsdz2; fi
+          python3 tests/run_target_sensors.py --controller "$CONTROLLER" \
+            --assembly "src/firmware/$SENSOR_DIRECTORY/sensors.asm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: firmware-validation-${{ matrix.controller }}

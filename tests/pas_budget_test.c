@@ -42,7 +42,8 @@ static void reference_ramp_up(uint8_t* target_current, bool enable) RAM_REENTRAN
 static void adaptive_setup(void)
 {
     setup();
-    g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE | ASSIST_FLAG_THROTTLE;
+    g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
+    g_config.assist_levels[0][1].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY | ASSIST_FLAG_THROTTLE;
     g_config.assist_levels[0][1].torque_amplification_factor_x10 = 25;
     pedal_cadence = 600;
     start();
@@ -93,9 +94,9 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "compensation"))
     {
         run(2000); assert(motor_current == 20);
-        g_config.use_voltage_compensation = false;
+        g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
         run(500); assert(motor_current == 20);
-        g_config.use_voltage_compensation = true;
+        g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE | SYSTEM_VOLTAGE_COMPENSATION;
         run(500); assert(motor_current == 20);
     }
     else if (!strcmp(argv[1], "throttle"))
@@ -110,7 +111,7 @@ int main(int argc, char **argv)
         for (uint8_t mode = 0; mode < 2; ++mode)
             for (uint8_t level = 0; level < 10; ++level)
             {
-                g_config.assist_levels[mode][level].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE;
+                g_config.assist_levels[mode][level].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY;
                 g_config.assist_levels[mode][level].target_current_percent = 100;
                 g_config.assist_levels[mode][level].torque_amplification_factor_x10 = 10 + level * 2;
                 app_set_operation_mode(mode); app_set_assist_level(level);

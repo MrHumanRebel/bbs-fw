@@ -30,7 +30,7 @@ uint8_t probe_lvc(bool recover)
 {
     now += 130;
     requested_current = 100;
-#ifdef BASELINE_PROBE
+#if defined(BASELINE_PROBE) && !defined(BASELINE_RECOVER_LVC)
     apply_low_voltage_limit();
 #else
     apply_low_voltage_limit(recover);
@@ -149,6 +149,20 @@ void main(void)
     CHECK(motor_current == 100, 22);
 #endif
     brake = true; run(5); CHECK(motor_current == 0, 23);
+#if HAS_CONTROLLER_TEMP_SENSOR
+    brake = false; controller_temperature_failed = true; run(5);
+#ifndef BASELINE_PROBE
+    CHECK(motor_current == 0 && app_get_status_code() == STATUS_ERROR_CONTROLLER_TEMP_SENSOR, 24);
+#endif
+    controller_temperature_failed = false;
+#endif
+#if HAS_MOTOR_TEMP_SENSOR
+    motor_temperature_failed = true; run(5);
+#ifndef BASELINE_PROBE
+    CHECK(motor_current == 0 && app_get_status_code() == STATUS_ERROR_MOTOR_TEMP_SENSOR, 25);
+#endif
+    motor_temperature_failed = false;
+#endif
     passed();
 }
 '''
@@ -160,11 +174,18 @@ void main(void)
         if baseline:
             old_app = work / 'baseline-app.c'
             old_app.write_text(subprocess.check_output(['git', 'show', baseline + ':src/firmware/app.c'], cwd=root, text=True))
+            old_battery = work / 'baseline-battery.c'
+            old_battery.write_bytes(subprocess.check_output(['git', 'show', baseline + ':src/firmware/battery.c'], cwd=root))
             harness = '#define BASELINE_PROBE 1\n' + harness.replace('"' + str(root / 'src/firmware/app.c') + '"', '"' + str(old_app) + '"')
+            harness = harness.replace('"' + str(root / 'src/firmware/battery.c') + '"', '"' + str(old_battery) + '"')
+            if 'apply_low_voltage_limit(bool' in old_app.read_text():
+                harness = '#define BASELINE_RECOVER_LVC 1\n' + harness
         source.write_text(harness)
         flags = ['-mstm8'] if controller == 'TSDZ2' else ['-mmcs51', '--model-large']
-        subprocess.run([sdcc, *flags, '--std-c99', '-D' + controller, '-I' + str(root / 'src/firmware'),
-                        str(source), '-o', str(work / 'control.ihx')], check=True, capture_output=True, text=True)
+        compiled = subprocess.run([sdcc, *flags, '--std-c99', '-D' + controller, '-I' + str(root / 'src/firmware'),
+                                   str(source), '-o', str(work / 'control.ihx')], capture_output=True, text=True)
+        if compiled.returncode:
+            raise RuntimeError(compiled.stdout + compiled.stderr)
         symbols = (work / 'control.map').read_text()
         addresses = {name: int(re.search(r'([0-9A-F]+)\s+_' + name + r'\s', symbols)[1], 16)
                      for name in ('passed', 'failed', 'failure_code', 'probe_begin')}

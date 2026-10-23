@@ -263,6 +263,36 @@ without self-generated crossing of the 20 km/h hard ceiling. It uses 500 W and
 measured motor, rider or road model. It cannot establish physical efficiency,
 range gains or universal absence of hunting on real bikes.
 
+### Sensor/SOC hardening and sole Adaptive Efficiency mode versus `7c84199`
+
+The next follow-up adds PAS interval rejection, enabled thermistor fault stops,
+conservative SOC updates during continuous assist, and retires the separate
+Adaptive Power controller. The old power-only encoding remains a read/migration
+format, never a selectable or independently executable controller. The watt
+entry behavior is unchanged. Exact measurements and hardware qualifications are
+in the [sensor/SOC report](sensor-soc-hardening.md).
+
+| Target | Flash before / after / delta | Static RAM before / after | Linker stack before / after |
+| --- | --- | --- | --- |
+| BBS02 / BBS02B | 28,227 / 28,732 / +505 B | XRAM 860 / 860 B | 164 / 172 B available (+8) |
+| BBSHD | 29,799 / 30,338 / +539 B | XRAM 874 / 874 B | 152 / 155 B available (+3) |
+| TSDZ2 | Image 16,780 / 16,988 / +208 B; CODE 16,047 / 16,255 | DATA 581 / 581 B; INITIALIZED 61 / 61 B | SSEG reservation 1 / 1 B |
+
+No static RAM area grows. SOC reuses the existing percentage byte's unused high
+bit and existing timestamp; its getters mask the private flag, including SW102.
+Foreground helpers use reentrant scratch storage instead of extra static spills.
+The main control probe still measures 31/31/74 B stack extensions; the new real
+sensor/SOC probe measures 24/24/51 B versus baseline 10/10/48 B. Both exclude
+interrupts and their main/fixture frame. The additional foreground stack work is
+reported rather than being presented as a stack saving.
+
+Flash regression limits become 28,768/30,368 B for BBS02/BBSHD and
+16,288/17,024 B for STM8 CODE/image. 8051 stack-capacity floors tighten to
+172/155 B; XRAM and STM8 RAM limits remain unchanged. Native builds use the same
+SDCC 4.5.0 options. Schema 8 remains 156 bytes, each assist level 6 bytes and the
+maximum request 161 bytes. There is no new logging, telemetry, measurement array,
+runtime statistic, EEPROM field or background task.
+
 ## Verification limits
 
 GPIO/pin assignments, ADC scaling, UART drivers/baud rates, ISR bodies, watchdog

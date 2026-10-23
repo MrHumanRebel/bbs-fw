@@ -107,7 +107,8 @@ static bool read_config()
         res = read(EEPROM_CONFIG_PAGE, 7, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
         if (res == EEPROM_OK)
         {
-            // No old configuration may silently activate efficiency or comfort.
+            // Retired v7 power budgets migrate to Efficiency below; old corrupt
+            // combined flags are still rejected and comfort remains disabled.
             if (g_config.use_voltage_compensation > 1u) res = EEPROM_ERROR_CHECKSUM;
             else
             {
@@ -161,11 +162,19 @@ static bool read_config()
             assist_level_t RAM_XDATA* level = (assist_level_t RAM_XDATA*)cursor;
             if (level->flags & ASSIST_FLAG_PAS_ADAPTIVE)
             {
+                // Legacy v7/v8 power-only encoding now selects the sole Efficiency
+                // controller. Keep its budget and ceilings; use this MCU's profile.
+                if (!(level->flags & ASSIST_FLAG_PAS_VARIABLE))
+                {
+                    level->flags |= ASSIST_FLAG_PAS_VARIABLE;
+                    g_config.use_voltage_compensation =
+                        (g_config.use_voltage_compensation & ~SYSTEM_EFFICIENCY_PROFILE_MASK) | CONTROLLER_EFFICIENCY_PROFILE;
+                }
                 uint8_t limit = config_power_budget_steps(&g_config, level);
                 if (level->torque_amplification_factor_x10 > limit)
                     level->torque_amplification_factor_x10 = limit;
                 if (limit == 0)
-                    level->flags &= ~ASSIST_FLAG_PAS_ADAPTIVE;
+                    level->flags &= ~ASSIST_FLAG_PAS_EFFICIENCY;
             }
         }
         if (!config_is_valid(&g_config)) res = EEPROM_ERROR_CHECKSUM;
@@ -235,7 +244,7 @@ static void load_default_config()
 	g_config.use_push_walk = 1;
 	g_config.use_pretension = 0;
 	g_config.pretension_speed_cutoff_kph = 16;
-	g_config.use_temperature_sensor = TEMPERATURE_SENSOR_CONTR | TEMPERATURE_SENSOR_MOTOR;
+	g_config.use_temperature_sensor = HAS_CONTROLLER_TEMP_SENSOR ? TEMPERATURE_SENSOR_CONTR : 0;
 
 	g_config.lights_mode = LIGHTS_MODE_DEFAULT;
 

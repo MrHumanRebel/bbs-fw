@@ -44,8 +44,8 @@
 #define STATUS_ERROR_MOTOR_OVER_TEMP		0x11
 #define STATUS_ERROR_CURRENT_SENSE			0x12
 #define STATUS_ERROR_BATTERY_TEMP_SENSOR	0x13 // n/a
-#define STATUS_ERROR_MOTOR_TEMP_SENSOR		0x14 // not implemented
-#define STATUS_ERROR_CONTROLLER_TEMP_SENSOR 0x15 // not implemented
+#define STATUS_ERROR_MOTOR_TEMP_SENSOR		0x14 // enabled motor sensor fault
+#define STATUS_ERROR_CONTROLLER_TEMP_SENSOR 0x15 // enabled controller sensor fault
 #define STATUS_ERROR_SPEED_SENSOR			0x21 // not implemented
 #define STATUS_ERROR_BMS_COMMUNICATION		0x22 // n/a
 #define STATUS_ERROR_HEAD_LIGHT				0x23 // not implemented

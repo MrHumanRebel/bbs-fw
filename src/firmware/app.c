@@ -451,6 +451,11 @@ uint8_t app_get_status_code()
 		return STATUS_ERROR_TORQUE_SENSOR;
 	}
 
+    if (temperature_motor_c == INT8_MIN)
+        return STATUS_ERROR_MOTOR_TEMP_SENSOR;
+    if (temperature_contr_c == INT8_MIN)
+        return STATUS_ERROR_CONTROLLER_TEMP_SENSOR;
+
 	if (temperature_motor_c > MAX_TEMPERATURE)
 	{
 		return STATUS_ERROR_MOTOR_OVER_TEMP;
@@ -561,7 +566,7 @@ uint8_t adaptive_pas_current(void) RAM_REENTRANT
     return (uint8_t)percent;
 }
 
-// Experimental request shaping, not a live measured motor-efficiency map.
+// Research-informed request shaping, not a live measured motor-efficiency map.
 // Published sweeps justify a low-cadence/load hypothesis, never a phase-current limit.
 static uint8_t efficiency_pas_current(uint8_t current) RAM_REENTRANT
 {
@@ -591,7 +596,7 @@ static uint8_t efficiency_pas_current(uint8_t current) RAM_REENTRANT
         else
         {
             // Keep hill starts and low-speed climbing unmodified. These are tunable
-            // experimental policy constants, not thresholds fitted to a factory map.
+            // conservative policy constants, not thresholds fitted to a factory map.
             uint16_t cadence = pas_get_cadence_rpm_x10();
             uint16_t speed = speed_sensor_get_rpm_x10();
             // The unshaped PAS request is budget * clamp(cadence / 600, 1/4, 1).
@@ -631,8 +636,7 @@ static void apply_pas_cadence(uint8_t throttle_percent)
         // Replace pretension too: this variant coasts at zero PAS demand and fails closed.
         requested_current = adaptive_pas_current();
         // The bounded power helper also updates the optional comfort ceiling.
-        if (assist_level_data.level.flags & ASSIST_FLAG_PAS_VARIABLE)
-            requested_current = efficiency_pas_current(requested_current);
+        requested_current = efficiency_pas_current(requested_current);
         return;
     }
 	if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && !(assist_level_data.level.flags & ASSIST_FLAG_PAS_TORQUE))
@@ -920,11 +924,20 @@ static bool apply_thermal_limit(void)
 	static RAM_BOOL temperature_limiting = false;
 
 	int16_t temp_contr_x100 = temperature_contr_x100();
-	temperature_contr_c = (int8_t)(CLAMP(temp_contr_x100 / 100, -128, 127));
+	temperature_contr_c = temp_contr_x100 == TEMPERATURE_SENSOR_FAULT_X100 ? INT8_MIN :
+        (int8_t)(CLAMP(temp_contr_x100 / 100, -127, 127));
 
 	int16_t temp_motor_x100 = temperature_motor_x100();
-	temperature_motor_c = (int8_t)(CLAMP(temp_motor_x100 / 100, -128, 127));
+	temperature_motor_c = temp_motor_x100 == TEMPERATURE_SENSOR_FAULT_X100 ? INT8_MIN :
+        (int8_t)(CLAMP(temp_motor_x100 / 100, -127, 127));
 
+    // Missing/shorted enabled sensors cannot silently disable thermal protection.
+    // Reuse the cached display bytes for fault status; no new flags or logging.
+    if (temperature_contr_c == INT8_MIN || temperature_motor_c == INT8_MIN)
+    {
+        requested_current = 0;
+        return true;
+    }
 	int16_t max_temp_x100 = MAX(temp_contr_x100, temp_motor_x100);
 
 	if (eventlog_is_enabled() && g_config.use_temperature_sensor && system_ms() > next_log_temp_ms)

@@ -51,8 +51,8 @@
                 <Style.Triggers><DataTrigger Binding="{Binding IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
             </Style></TextBlock.Style>
         </TextBlock>
-        <TextBox Grid.Column="1" Grid.Row="1" Margin="10,8,0,0" Text="{Binding AdaptivePowerWatts, UpdateSourceTrigger=LostFocus}"
-                 AutomationProperties.AutomationId="AdaptivePowerBudget" ToolTip="{Binding AdaptivePowerLimitText}">
+        <TextBox Grid.Column="1" Grid.Row="1" Margin="10,8,0,0" Text="{Binding PasBudgetWatts, UpdateSourceTrigger=LostFocus}"
+                 AutomationProperties.AutomationId="PasBudget" ToolTip="{Binding PasBudgetLimitText}">
             <TextBox.Style><Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}"><Setter Property="Visibility" Value="Collapsed"/>
                 <Style.Triggers><DataTrigger Binding="{Binding IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
             </Style></TextBox.Style>

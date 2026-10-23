@@ -20,6 +20,8 @@ int main(void)
 {
     memset(pages, 255, sizeof pages);
     load_default_config();
+    assert(g_config.use_temperature_sensor == (HAS_CONTROLLER_TEMP_SENSOR ? TEMPERATURE_SENSOR_CONTR : 0));
+    g_config.use_temperature_sensor = TEMPERATURE_SENSOR_CONTR | TEMPERATURE_SENSOR_MOTOR;
     g_config.max_current_amps = MAX_CONFIG_CURRENT_AMPS;
     g_config.current_ramp_amps_s = 12;
     g_config.assist_levels[1][4].flags = ASSIST_FLAG_PAS | ASSIST_FLAG_VOLTAGE_COMPENSATION;
@@ -30,6 +32,7 @@ int main(void)
     memset(&g_config, 255, sizeof g_config);
     cfgstore_init();
     assert(g_config.max_current_amps == MAX_CONFIG_CURRENT_AMPS && g_config.current_ramp_amps_s == 12);
+    assert(g_config.use_temperature_sensor == (TEMPERATURE_SENSOR_CONTR | TEMPERATURE_SENSOR_MOTOR));
     assert(g_config.use_voltage_compensation == (1u | CONTROLLER_EFFICIENCY_PROFILE) && g_config.current_ramp_smoothness_percent == 0);
     assert(g_config.assist_levels[1][4].flags == ASSIST_FLAG_PAS && g_config.assist_levels[1][4].target_current_percent == 65);
     assert(pages[0][0] == CONFIG_VERSION && pages[0][1] == 156);
@@ -50,14 +53,16 @@ int main(void)
     assert(cfgstore_save_config());
     memset(&g_config, 0, sizeof g_config);
     cfgstore_init();
-    assert(g_config.assist_levels[1][4].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE | ASSIST_FLAG_THROTTLE));
+    assert(g_config.assist_levels[1][4].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY | ASSIST_FLAG_THROTTLE));
     assert(g_config.assist_levels[1][4].torque_amplification_factor_x10 == 25);
-    /* v7 retains Adaptive Power, selects the compiled profile, and keeps comfort OFF. */
+    /* v7 power budgets migrate to the sole Efficiency controller, retaining all
+     * current/power settings, selecting the compiled profile and comfort OFF. */
+    pages[0][3 + 34 + 14 * 6] &= ~ASSIST_FLAG_PAS_VARIABLE;
     pages[0][0] = 7; pages[0][3 + 154] = 1; pages[0][2] = 0;
     for (unsigned i = 3; i < 159; ++i) pages[0][2] += pages[0][i];
     cfgstore_init();
     assert(pages[0][0] == CONFIG_VERSION && (g_config.use_voltage_compensation & SYSTEM_EFFICIENCY_COMFORT) == 0);
-    assert(g_config.assist_levels[1][4].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE | ASSIST_FLAG_THROTTLE));
+    assert(g_config.assist_levels[1][4].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY | ASSIST_FLAG_THROTTLE));
     config_t valid = g_config;
     assert(config_is_valid(&valid));
     /* A valid checksum cannot turn an invalid v7 flag combination into opt-in. */
