@@ -34,6 +34,8 @@ class Program
     static async Task Main()
     {
         await ControllerOperationTests.Run(Check);
+        AdaptivePowerTests.Run(Check);
+        EfficiencyTests.Run(Check);
         byte[] telemetry = {1,4,1,1,224,1,4,3,232,1,24,1,1,0,0};
         telemetry[14] = (byte)telemetry.Take(14).Sum(x => x);
         var live = VirtualTelemetry.Decode(telemetry);
@@ -53,7 +55,7 @@ class Program
         Check(system.CurrentRampSmoothnessPercent == 100, "view model bounds curve softness");
         system.UseVoltageCompensation = true;
         Check(system.GetConfig().UseVoltageCompensation && system.GetConfig().StandardAssistLevels.Concat(system.GetConfig().SportAssistLevels).All(l =>
-            !l.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation)),
+            !l.Type.HasFlag((Configuration.AssistFlagsType)Configuration.LegacyVoltageCompensationFlag)),
             "one system toggle persists without per-level flags");
         int durationChanges = 0;
         system.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(system.CurrentRiseSeconds)) ++durationChanges; };
@@ -63,7 +65,7 @@ class Program
         cfg.StandardAssistLevels[1].Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.Throttle;
         cfg.MaxBatteryVolts = 58.8f;
         var original = cfg.WriteToBuffer();
-        Check(original.Length == 156 && Configuration.CurrentVersion == 6, "v6 payload includes global compensation and curve shape");
+        Check(original.Length == 156 && Configuration.CurrentVersion == 8, "v8 retains the 156-byte payload and existing global controls");
         Check(!cfg.UseVoltageCompensation && cfg.CurrentRampSmoothnessPercent == 0, "new controls default to compensation off and linear ramp");
         cfg.UseVoltageCompensation = true;
         cfg.CurrentRampSmoothnessPercent = 75;
@@ -86,7 +88,7 @@ class Program
         var migrated = new Configuration();
         Check(migrated.ParseFromBufferV5(legacy) && migrated.UseVoltageCompensation && migrated.CurrentRampSmoothnessPercent == 0,
               "v5 per-level flag migrates to global control and linear ramp");
-        Check(migrated.StandardAssistLevels.Concat(migrated.SportAssistLevels).All(x => !x.Type.HasFlag(Configuration.AssistFlagsType.VoltageCompensation)), "legacy per-level flags cleared");
+        Check(migrated.StandardAssistLevels.Concat(migrated.SportAssistLevels).All(x => !x.Type.HasFlag((Configuration.AssistFlagsType)Configuration.LegacyVoltageCompensationFlag)), "legacy per-level flags cleared");
         string path = Path.GetTempFileName();
         try
         {
@@ -95,8 +97,9 @@ class Program
             Check(fromXml.WriteToBuffer().SequenceEqual(cfg.WriteToBuffer()), "XML preserves global controls and every existing field");
             cfg.UseVoltageCompensation = false;
             cfg.CurrentRampSmoothnessPercent = 0;
-            cfg.StandardAssistLevels[1].Type |= Configuration.AssistFlagsType.VoltageCompensation;
+            cfg.StandardAssistLevels[1].Type |= (Configuration.AssistFlagsType)Configuration.LegacyVoltageCompensationFlag;
             cfg.WriteToFile(path);
+            File.WriteAllText(path, File.ReadAllText(path).Replace("PasAdaptive", "VoltageCompensation"));
             fromXml.ReadFromFile(path);
             Check(fromXml.UseVoltageCompensation, "legacy XML flags migrate to global control");
         }

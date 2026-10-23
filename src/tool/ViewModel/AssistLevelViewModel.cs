@@ -1,5 +1,6 @@
 using BBSFW.Model;
 using BBSFW.ViewModel.Base;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -23,7 +24,9 @@ namespace BBSFW.ViewModel
 		{
 			Cadence,
 			Torque,
-			Variable
+			Variable,
+            AdaptivePower,
+            AdaptiveEfficiency
 		}
 
 
@@ -51,6 +54,8 @@ namespace BBSFW.ViewModel
 				}
 
 				variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.Variable, "Variable"));
+                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptivePower, "Adaptive Power"));
+                variants.Add(new ValueItemViewModel<AssistPasVariant>(AssistPasVariant.AdaptiveEfficiency, "Adaptive Efficiency (experimental)"));
 
 				return variants;
 			}
@@ -91,8 +96,15 @@ namespace BBSFW.ViewModel
 			{
 				if (value.Value != SelectedType.Value)
 				{
+                    if (IsPasAssistAdaptiveVariant && value.Value != AssistBaseType.Pas)
+                    {
+                        _level.Type = ClearPasVariantFlag(_level.Type);
+                        TorqueAmplificationFactor = 0;
+                    }
 					_level.Type = ApplyBaseTypeFlag(value.Value, _level.Type);
 					OnPropertyChanged(nameof(SelectedType));
+                    OnPropertyChanged(nameof(IsPasAssistAdaptiveVariant));
+                    OnPropertyChanged(nameof(IsPasAssistEfficiencyVariant));
 
 					switch (value.Value)
 					{
@@ -128,7 +140,11 @@ namespace BBSFW.ViewModel
 			get
 			{
 				var variant = AssistPasVariant.Cadence;
-				if (_level.Type.HasFlag(Configuration.AssistFlagsType.PasTorque))
+                if (IsPasAssistAdaptiveVariant)
+                {
+                    variant = IsPasAssistEfficiencyVariant ? AssistPasVariant.AdaptiveEfficiency : AssistPasVariant.AdaptivePower;
+                }
+                else if (_level.Type.HasFlag(Configuration.AssistFlagsType.PasTorque))
 				{
 					variant = AssistPasVariant.Torque;
 				}
@@ -143,13 +159,20 @@ namespace BBSFW.ViewModel
 			{
 				if (value.Value != SelectedPasVariant.Value)
 				{
+                    if (IsPasAssistAdaptiveVariant) TorqueAmplificationFactor = 0;
 					_level.Type = ApplyPasVariantFlag(value.Value, _level.Type);
 					OnPropertyChanged(nameof(SelectedPasVariant));
 					OnPropertyChanged(nameof(IsPasAssistVariableVariant));
 					OnPropertyChanged(nameof(IsPasAssistTorqueVariant));
+                    OnPropertyChanged(nameof(IsPasAssistAdaptiveVariant));
+                    OnPropertyChanged(nameof(IsPasAssistEfficiencyVariant));
 
 					switch(value.Value)
 					{
+                        case AssistPasVariant.AdaptiveEfficiency:
+                        case AssistPasVariant.AdaptivePower:
+                            AdaptivePowerWatts = 250;
+                            break;
 						case AssistPasVariant.Variable:
 							TorqueAmplificationFactor = 0;
 							IsThrottleEnabled = false;
@@ -206,7 +229,7 @@ namespace BBSFW.ViewModel
 
 		public bool IsPasAssistVariableVariant
 		{
-			get { return _level.Type.HasFlag(Configuration.AssistFlagsType.PasVariable); }
+			get { return _level.Type.HasFlag(Configuration.AssistFlagsType.PasVariable) && !IsPasAssistAdaptiveVariant; }
 		}
 
 		public bool IsPasAssistTorqueVariant
@@ -215,6 +238,51 @@ namespace BBSFW.ViewModel
 		}
 
 
+
+        public bool IsPasAssistEfficiencyVariant => Configuration.IsEfficiencyLevel(_level);
+        public bool IsPasAssistAdaptiveVariant => _level.Type.HasFlag(Configuration.AssistFlagsType.PasAdaptive);
+
+        public uint AdaptivePowerLimitWatts => _configVm.GetConfig().GetAdaptivePowerLimitWatts(_level);
+        public string AdaptivePowerLimitText => $"Configured ceiling: {AdaptivePowerLimitWatts} W (10 W steps), based on full-charge voltage and this level's current ceiling.";
+
+        internal void RefreshPowerLimit(bool clamp)
+        {
+            OnPropertyChanged(nameof(AdaptivePowerLimitWatts));
+            OnPropertyChanged(nameof(AdaptivePowerLimitText));
+            OnPropertyChanged(nameof(AdaptiveQuantizationWarning));
+            OnPropertyChanged(nameof(AdaptiveSpeedText));
+            if (clamp && IsPasAssistAdaptiveVariant)
+            {
+                if (AdaptivePowerWatts > AdaptivePowerLimitWatts) AdaptivePowerWatts = AdaptivePowerLimitWatts;
+                else if (AdaptivePowerWatts == 0 && AdaptivePowerLimitWatts >= 10) AdaptivePowerWatts = 250;
+            }
+        }
+
+        public string AdaptiveQuantizationWarning
+        {
+            get
+            {
+                double quantum = _configVm.MaxCurrentAmps * _configVm.MaxBatteryVolts / 100d;
+                if (!double.IsFinite(quantum) || quantum <= 0) return "Set valid battery voltage and current limits first.";
+                string consequence = AdaptivePowerWatts < quantum ? "The full budget can round to zero current." :
+                    AdaptivePowerWatts * 0.25 < quantum ? "Low-cadence demand can round to zero current." : "Requests round down to whole current steps.";
+                return $"1% current ≈ {quantum:F1} W at full charge. {consequence} Independent throttle can exceed this PAS-only watt budget.";
+            }
+        }
+        public string AdaptiveSpeedText => $"Speed ceiling: {_configVm.MaxSpeedKph * MaxSpeedPercent / 100d:F1} km/h. Adaptive Efficiency trims demand near this ceiling; hill starts retain the base budget. This is not a guaranteed speed or a measured efficiency optimum.";
+
+        public uint AdaptivePowerWatts
+        {
+            get => (uint)Math.Round(_level.TorqueAmplificationFactor * 100f);
+            set
+            {
+                uint rounded = Math.Min(Math.Max(value / 10u * 10u, 10u), AdaptivePowerLimitWatts);
+                _level.TorqueAmplificationFactor = rounded / 100f;
+                OnPropertyChanged(nameof(AdaptivePowerWatts));
+                OnPropertyChanged(nameof(AdaptiveQuantizationWarning));
+                OnPropertyChanged(nameof(TorqueAmplificationFactor));
+            }
+        }
 
 		public uint TargetCurrentPercent
 		{
@@ -225,6 +293,7 @@ namespace BBSFW.ViewModel
 				{
 					_level.MaxCurrentPercent = value;
 					OnPropertyChanged(nameof(TargetCurrentPercent));
+                    RefreshPowerLimit(true);
 				}
 			}
 		}
@@ -264,6 +333,7 @@ namespace BBSFW.ViewModel
 				{
 					_level.MaxSpeedPercent = value;
 					OnPropertyChanged(nameof(MaxSpeedPercent));
+                    OnPropertyChanged(nameof(AdaptiveSpeedText));
 				}
 			}
 		}
@@ -315,7 +385,7 @@ namespace BBSFW.ViewModel
 		private static Configuration.AssistFlagsType ClearPasVariantFlag(Configuration.AssistFlagsType flags)
 		{
 			byte f = (byte)flags;
-			f &= (byte)~(Configuration.AssistFlagsType.PasTorque | Configuration.AssistFlagsType.PasVariable);
+			f &= (byte)~(Configuration.AssistFlagsType.PasTorque | Configuration.AssistFlagsType.PasVariable | Configuration.AssistFlagsType.PasAdaptive);
 
 			return (Configuration.AssistFlagsType)f;
 		}
@@ -325,6 +395,12 @@ namespace BBSFW.ViewModel
 			var result = ClearPasVariantFlag(flags);
 			switch (pasVariant)
 			{
+                case AssistPasVariant.AdaptiveEfficiency:
+                    result |= Configuration.AssistFlagsType.PasAdaptive | Configuration.AssistFlagsType.PasVariable;
+                    break;
+                case AssistPasVariant.AdaptivePower:
+                    result |= Configuration.AssistFlagsType.PasAdaptive;
+                    break;
 				case AssistPasVariant.Torque:
 					result |= Configuration.AssistFlagsType.PasTorque;
 					break;

@@ -1,0 +1,30 @@
+motor_family,variant,parameter,value,unit,source_id,evidence_type,notes
+BBSHD,Grin tested sample 2019,kv_crank_noload,3.27,crank_rpm_per_V,GRIN_2019,independent_measurement,
+BBSHD,Grin tested sample 2019,equivalent_winding_resistance,0.086,ohm,GRIN_2019,independent_measurement,Black-box characteristic; NOT phase winding resistance.
+BBSHD,Grin tested sample 2019,stator_lamination_length,48,mm,GRIN_2019,independent_measurement,
+BBSHD,Grin tested sample 2019,stator_plus_shell_mass,1.8,kg,GRIN_2019,independent_measurement,
+BBSHD,Grin tested sample 2019,rotor_magnets,8,count,GRIN_2019,independent_measurement,
+BBSHD,Grin tested sample 2019,thermal_conduction_vs_BBS02,1.15,relative_ratio_approx,GRIN_2019,qualitative_independent_measurement,"~15% better aggregate dissipation, not a specific thermal resistance in K/W."
+TSDZ2,36V motor,no_load_motor_shaft_speed,4000,rotor_rpm,TSDZ2_V2_MOTOR,open_source_hardware_characterization,"Not crank cadence, not guaranteed at all voltage/controller setups."
+TSDZ2,48V motor,no_load_motor_shaft_speed,4000,rotor_rpm,TSDZ2_V2_MOTOR,open_source_hardware_characterization,
+TSDZ2,36V motor,winding_resistance_reported,0.094,ohm,TSDZ2_V2_MOTOR,open_source_hardware_characterization,Source does not define phase-vs-line convention; verify physically.
+TSDZ2,36V motor,winding_inductance_reported,76,microhenry,TSDZ2_V2_MOTOR,open_source_hardware_characterization,Verify phase/line interpretation and PWM operating temperature.
+TSDZ2,36V motor,pole_pairs,8,pairs,TSDZ2_V2_MOTOR,open_source_hardware_characterization,
+TSDZ2,48V motor,winding_resistance_reported,0.125,ohm,TSDZ2_V2_MOTOR,open_source_hardware_characterization,Source does not define phase-vs-line convention; verify physically.
+TSDZ2,48V motor,winding_inductance_reported,135,microhenry,TSDZ2_V2_MOTOR,open_source_hardware_characterization,Verify phase/line interpretation and PWM operating temperature.
+TSDZ2,48V motor,pole_pairs,8,pairs,TSDZ2_V2_MOTOR,open_source_hardware_characterization,
+BBS02B,M315 G340.500.C catalog,rated_output_power,500,W,BAFANG_CATALOG_2021,manufacturer_spec,NOT 750W variant. BBS02B catalog motor M315; CAN vs UART depends revision.
+BBS02B,M315 G340.500.C catalog,nominal_voltage,48,V,BAFANG_CATALOG_2021,manufacturer_spec,36/48V catalog variants; specific nameplate must be checked.
+BBS02B,M315 G340.500.C catalog,claimed_min_efficiency,80,percent,BAFANG_CATALOG_2021,manufacturer_spec,"Catalog >=80%, not measured efficiency map."
+BBS02B,BBS02B 48V 750W nominal,battery_current_limit_nominal,25,A,CYCLOBOOST_COMPARE,vendor_spec,Do not assume exact hardware or upgraded BBS02B is same winding as 2013 data.
+BBSHD,M615 G320 catalog,rated_power_model_variants,1000,W,BAFANG_CATALOG_2021,manufacturer_spec,Catalogue also lists 750W variants; do not conflate.
+BBSHD,M615 G320 catalog,nominal_voltage,48,V,BAFANG_CATALOG_2021,manufacturer_spec,
+BBSHD,M615 G320 catalog,claimed_min_efficiency,80,percent,BAFANG_CATALOG_2021,manufacturer_spec,
+BBSHD,48V 1000W,controller_battery_current_limit_nominal,30,A,CYCLOBOOST_COMPARE,vendor_spec,
+TSDZ2,2019 manual,motor_weight_nominal,3.3,kg,TSDZ2_MANUAL,distributor_spec,
+TSDZ2,2019 manual,max_output_torque_nominal,80,Nm,TSDZ2_MANUAL,distributor_spec,"Up to, not rated continuous torque."
+BBS02B,related-family BBS02 2019 Grin sample; NOT verified BBS02B,kv_crank_noload,2.71,crank_rpm_per_V,GRIN_2019,related_family_reference_only,"Original measurement on BBS02 older variant, not BBS02B. Black-box unloaded crank rpm/V, not bare rotor Kv."
+BBS02B,related-family BBS02 2019 Grin sample; NOT verified BBS02B,equivalent_winding_resistance,0.131,ohm,GRIN_2019,related_family_reference_only,"Original measurement on BBS02 older variant, not BBS02B. Black-box characteristic; NOT phase-to-phase motor resistance."
+BBS02B,related-family BBS02 2019 Grin sample; NOT verified BBS02B,stator_lamination_length,29,mm,GRIN_2019,related_family_reference_only,"Original measurement on BBS02 older variant, not BBS02B."
+BBS02B,related-family BBS02 2019 Grin sample; NOT verified BBS02B,stator_plus_shell_mass,1.13,kg,GRIN_2019,related_family_reference_only,"Original measurement on BBS02 older variant, not BBS02B."
+BBS02B,related-family BBS02 2019 Grin sample; NOT verified BBS02B,rotor_magnets,16,count,GRIN_2019,related_family_reference_only,"Original measurement on BBS02 older variant, not BBS02B."

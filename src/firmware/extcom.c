@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stddef.h>
 
 #define KEEP		0
 #define DISCARD		-1
@@ -30,7 +31,7 @@
 
 // Largest supported request is WRITE_CONFIG: header + payload + checksum.
 #define BUFFER_SIZE (sizeof(config_t) + 5u)
-#if CONFIG_VERSION != 6
+#if CONFIG_VERSION != 8
 #error Review maximum protocol request size when changing the configuration schema.
 #endif
 #define DISCARD_TIMEOUT_MS	50
@@ -88,8 +89,8 @@ static uint8_t msgbuf[BUFFER_SIZE];
 static uint32_t last_recv_ms;
 static uint32_t discard_until_ms;
 
-static uint8_t compute_checksum(uint8_t* buf, uint8_t length);
-static void write_uart_and_increment_checksum(uint8_t data, uint8_t* checksum);
+static uint8_t compute_checksum(uint8_t RAM_XDATA* buf, uint8_t length);
+static void write_uart_and_increment_checksum(uint8_t data, uint8_t RAM_XDATA* checksum);
 
 static int16_t try_process_request();
 static int16_t try_process_read_request();
@@ -190,7 +191,7 @@ void extcom_process()
 }
 
 
-static uint8_t compute_checksum(uint8_t* buf, uint8_t length)
+static uint8_t compute_checksum(uint8_t RAM_XDATA* buf, uint8_t length)
 {
 	uint8_t result = 0;
 
@@ -202,7 +203,7 @@ static uint8_t compute_checksum(uint8_t* buf, uint8_t length)
 	return result;
 }
 
-static void write_uart_and_increment_checksum(uint8_t data, uint8_t* checksum)
+static void write_uart_and_increment_checksum(uint8_t data, uint8_t RAM_XDATA* checksum)
 {
 	*checksum += data;
 	uart_write(data);
@@ -399,7 +400,7 @@ static int16_t process_read_config()
 		write_uart_and_increment_checksum(CONFIG_VERSION, &checksum);
 		write_uart_and_increment_checksum(sizeof(config_t), &checksum);
 
-		uint8_t* cfg = (uint8_t*)&g_config;
+		uint8_t RAM_XDATA* cfg = (uint8_t RAM_XDATA*)&g_config;
 		for (uint8_t i = 0; i < sizeof(config_t); ++i)
 		{
 			write_uart_and_increment_checksum(*(cfg + i), &checksum);
@@ -501,12 +502,14 @@ static int16_t process_write_config()
 	if (compute_checksum(msgbuf, (uint8_t)(4 + sizeof(config_t))) == msgbuf[4 + sizeof(config_t)])
 	{
 		bool result = false;
-		if (version == CONFIG_VERSION && length == sizeof(config_t) &&
-            msgbuf[4 + sizeof(config_t) - 2u] <= 1u && msgbuf[4 + sizeof(config_t) - 1u] <= 100u)
-		{
-			memcpy(&g_config, msgbuf + 4, sizeof(config_t));
-			result = cfgstore_save_config();
-		}
+        // Validate the reused variant byte before changing the live configuration.
+        if (version == CONFIG_VERSION && length == sizeof(config_t) &&
+            config_is_valid((const config_t RAM_XDATA*)(msgbuf + 4)))
+        {
+            app_configuration_changed();
+            memcpy(&g_config, msgbuf + 4, sizeof(config_t));
+            result = cfgstore_save_config();
+        }
 
 		uint8_t checksum = 0;
 		write_uart_and_increment_checksum(REQUEST_TYPE_WRITE, &checksum);
@@ -533,6 +536,7 @@ static int16_t process_write_reset_config()
 	if (compute_checksum(msgbuf, 2) == msgbuf[2])
 	{
 
+		app_configuration_changed();
 		bool res = cfgstore_reset_config();
 
 		uint8_t checksum = 0;
@@ -660,7 +664,7 @@ static int16_t process_bafang_display_read_speed()
 		}
 
 		// T_kph -> rpm
-		speed = (uint16_t)(25000.f / (3 * 3.14159f * 1.27f * EXPAND_U16(g_config.wheel_size_inch_x10_u16h, g_config.wheel_size_inch_x10_u16l)) * data);
+		speed = convert_wheel_speed_kph_to_rpm(data);
 	}
 	else
 	{

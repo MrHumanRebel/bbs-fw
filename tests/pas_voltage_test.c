@@ -10,18 +10,21 @@
 
 config_t g_config;
 static uint32_t now;
-static uint16_t voltage = 480, wheel_speed;
+static uint16_t voltage = 480, wheel_speed, pedal_cadence = MAX_CADENCE_RPM_X10;
 static uint8_t motor_current, motor_cadence, throttle;
+static uint16_t motor_faults;
+static bool motor_enabled;
 static bool pedaling = true, backwards, brake, shift;
 static int16_t temperature;
+static bool torque_valid = true;
 uint32_t system_ms(void) { return now; }
 uint16_t motor_get_battery_voltage_x10(void) { return voltage; }
 uint8_t motor_get_target_current(void) { return motor_current; }
 void motor_set_target_current(uint8_t value) { motor_current = value; }
 void motor_set_target_speed(uint8_t value) { motor_cadence = value; }
-void motor_enable(void) {}
-void motor_disable(void) {}
-uint16_t motor_status(void) { return 0; }
+void motor_enable(void) { motor_enabled = true; }
+void motor_disable(void) { motor_enabled = false; }
+uint16_t motor_status(void) { return motor_faults; }
 void lights_set(bool value) { (void)value; }
 void lights_enable(void) {}
 void lights_disable(void) {}
@@ -31,11 +34,11 @@ uint8_t throttle_map_response(uint8_t value) { return value; }
 bool pas_is_pedaling_forwards(void) { return pedaling; }
 bool pas_is_pedaling_backwards(void) { return backwards; }
 uint16_t pas_get_pulse_counter(void) { return 100; }
-uint16_t pas_get_cadence_rpm_x10(void) { return MAX_CADENCE_RPM_X10; }
+uint16_t pas_get_cadence_rpm_x10(void) { return pedal_cadence; }
 uint16_t speed_sensor_get_rpm_x10(void) { return wheel_speed; }
 bool speed_sensor_is_moving(void) { return wheel_speed > 0; }
 uint16_t torque_sensor_get_nm_x100(void) { return 1000; }
-bool torque_sensor_ok(void) { return true; }
+bool torque_sensor_ok(void) { return torque_valid; }
 bool brake_is_activated(void) { return brake; }
 bool shift_sensor_is_activated(void) { return shift; }
 int16_t temperature_contr_x100(void) { return temperature; }
@@ -48,6 +51,11 @@ static void setup(void)
 {
 	g_config.max_current_amps = 25;
 	g_config.current_ramp_amps_s = 100;
+    g_config.speed_sensor_signals = 1;
+    g_config.throttle_start_voltage_mv_u16h = 1000 >> 8;
+    g_config.throttle_start_voltage_mv_u16l = (uint8_t)1000;
+    g_config.throttle_end_voltage_mv_u16h = 3600 >> 8;
+    g_config.throttle_end_voltage_mv_u16l = (uint8_t)3600;
     g_config.use_voltage_compensation = 1;
 	g_config.max_battery_x100v_u16h = 5880 >> 8;
 	g_config.max_battery_x100v_u16l = 5880 & 255;
@@ -80,6 +88,29 @@ static void run(unsigned milliseconds)
 		app_process();
 	}
 }
+
+/* Adapt isolated test inputs to the foreground application's private scratch byte. */
+static void test_ramp_up(uint8_t *value, bool enabled)
+{
+    requested_current = *value;
+    apply_current_ramp_up(enabled);
+    *value = requested_current;
+}
+static bool test_speed_limit(uint8_t *value, uint8_t throttle_value, bool pas, bool override)
+{
+    requested_current = *value;
+    bool result = apply_speed_limit(throttle_value, pas, override);
+    *value = requested_current;
+    return result;
+}
+#if HAS_TORQUE_SENSOR
+static void test_pas_torque(uint8_t *value)
+{
+    requested_current = *value;
+    apply_pas_torque();
+    *value = requested_current;
+}
+#endif
 
 /* Frozen pre-optimization formula; include every uint16_t/uint8_t input, including clamps. */
 static uint16_t reference_current_ramp_curve(uint16_t progress, uint8_t smoothness)
@@ -128,27 +159,27 @@ int main(int argc, char **argv)
         g_config.current_ramp_smoothness_percent = 100;
         start();
         uint8_t value = 0, previous = 0;
-        apply_current_ramp_up(&value, true);
+        test_ramp_up(&value, true);
         for (unsigned t = 0; t <= 2500; t += 5)
         {
-            now = t; value = 100; apply_current_ramp_up(&value, true);
+            now = t; value = 100; test_ramp_up(&value, true);
             assert(value >= previous && value <= 100);
             if (t == 625) assert(value == 15);
             if (t == 1250) assert(value == 50);
             previous = value;
         }
         assert(value == 100);
-        value = 0; apply_current_ramp_up(&value, false); assert(value == 0);
-        now = UINT32_MAX - 100; value = 60; apply_current_ramp_up(&value, true);
-        now += 1500; value = 60; apply_current_ramp_up(&value, true); assert(value == 60);
-        value = 10; apply_current_ramp_up(&value, true); assert(value == 10);
-        value = 90; apply_current_ramp_up(&value, false); assert(value == 90);
+        value = 0; test_ramp_up(&value, false); assert(value == 0);
+        now = UINT32_MAX - 100; value = 60; test_ramp_up(&value, true);
+        now += 1500; value = 60; test_ramp_up(&value, true); assert(value == 60);
+        value = 10; test_ramp_up(&value, true); assert(value == 10);
+        value = 90; test_ramp_up(&value, false); assert(value == 90);
         g_config.current_ramp_smoothness_percent = 0;
         g_config.current_ramp_amps_s = 255;
-        now = 0; value = 0; apply_current_ramp_up(&value, false);
-        value = 100; apply_current_ramp_up(&value, true);
-        now = 50; value = 100; apply_current_ramp_up(&value, true); assert(value >= 50 && value <= 52);
-        now = 100; value = 100; apply_current_ramp_up(&value, true); assert(value == 100);
+        now = 0; value = 0; test_ramp_up(&value, false);
+        value = 100; test_ramp_up(&value, true);
+        now = 50; value = 100; test_ramp_up(&value, true); assert(value >= 50 && value <= 52);
+        now = 100; value = 100; test_ramp_up(&value, true); assert(value == 100);
     }
     else if (!strcmp(test, "global_compensation"))
     {
@@ -335,11 +366,11 @@ int main(int argc, char **argv)
 		g_config.use_speed_sensor = true; g_config.max_speed_kph = 6;
 		start(); wheel_speed = assist_level_data.max_wheel_speed_rpm_x10;
 		uint8_t current = 60;
-		assert(apply_speed_limit(&current, 100, false, true)); assert(current == 0);
+		assert(test_speed_limit(&current, 100, false, true)); assert(current == 0);
 		wheel_speed += 100; current = 0;
-		assert(apply_speed_limit(&current, 0, false, false)); assert(current == 0);
+		assert(test_speed_limit(&current, 0, false, false)); assert(current == 0);
 		wheel_speed = 65535; current = 60;
-		assert(apply_speed_limit(&current, 100, false, true)); assert(current == 0);
+		assert(test_speed_limit(&current, 100, false, true)); assert(current == 0);
 	}
 	else if (!strcmp(test, "speed_limit_ramp"))
 	{
@@ -348,12 +379,12 @@ int main(int argc, char **argv)
 		uint8_t previous = 60;
 		for (wheel_speed = 0; wheel_speed <= limit; wheel_speed++)
 		{
-			uint8_t current = 60; apply_speed_limit(&current, 100, false, true);
+			uint8_t current = 60; test_speed_limit(&current, 100, false, true);
 			assert(current <= previous); previous = current;
 		}
 		assert(previous == 0);
 		wheel_speed = 0; uint8_t current = 60;
-		assert(!apply_speed_limit(&current, 100, false, true)); assert(current == 60);
+		assert(!test_speed_limit(&current, 100, false, true)); assert(current == 60);
 	}
 	else if (!strcmp(test, "speed_limit_app"))
 	{
@@ -372,9 +403,9 @@ int main(int argc, char **argv)
 		g_config.throttle_global_spd_lim_percent = 6;
 		start(); wheel_speed = global_throttle_speed_limit_rpm_x10;
 		uint8_t current = 60;
-		assert(apply_speed_limit(&current, 100, false, true)); assert(current == 0);
+		assert(test_speed_limit(&current, 100, false, true)); assert(current == 0);
 		current = 60;
-		assert(!apply_speed_limit(&current, 100, true, true)); assert(current == 60);
+		assert(!test_speed_limit(&current, 100, true, true)); assert(current == 60);
 	}
 	else if (!strcmp(test, "speed_limit_override"))
 	{
@@ -383,16 +414,16 @@ int main(int argc, char **argv)
 		g_config.assist_levels[0][1].flags |= ASSIST_FLAG_OVERRIDE_SPEED;
 		start(); wheel_speed = assist_level_data.max_wheel_speed_rpm_x10;
 		uint8_t current = 60;
-		assert(!apply_speed_limit(&current, 100, false, true)); assert(current == 60);
+		assert(!test_speed_limit(&current, 100, false, true)); assert(current == 60);
 		wheel_speed = global_speed_limit_rpm * 10; current = 60;
-		assert(apply_speed_limit(&current, 100, false, true)); assert(current == 0);
+		assert(test_speed_limit(&current, 100, false, true)); assert(current == 0);
 	}
 	else if (!strcmp(test, "speed_limit_disabled"))
 	{
 		start(); wheel_speed = 65535; uint8_t current = 60;
-		assert(!apply_speed_limit(&current, 100, false, true)); assert(current == 60);
+		assert(!test_speed_limit(&current, 100, false, true)); assert(current == 60);
 		g_config.use_speed_sensor = true; assist_level_data.max_wheel_speed_rpm_x10 = 0;
-		assert(!apply_speed_limit(&current, 100, false, true)); assert(current == 60);
+		assert(!test_speed_limit(&current, 100, false, true)); assert(current == 60);
 	}
 	else if (!strcmp(test, "speed_limit_ranges"))
 	{
@@ -406,7 +437,7 @@ int main(int argc, char **argv)
 			for (wheel_speed = 0; wheel_speed <= limit; wheel_speed++)
 			{
 				uint8_t current = 100;
-				apply_speed_limit(&current, 100, false, true);
+				test_speed_limit(&current, 100, false, true);
 				assert(current <= previous); previous = current;
 			}
 			assert(previous == 0);
@@ -414,8 +445,8 @@ int main(int argc, char **argv)
 		/* An interval rounded down to zero must never divide by zero. */
 		assist_level_data.max_wheel_speed_rpm_x10 = 1;
 		wheel_speed = 0; uint8_t current = 100;
-		apply_speed_limit(&current, 100, false, true); assert(current == 100);
-		wheel_speed = 1; apply_speed_limit(&current, 100, false, true); assert(current == 0);
+		test_speed_limit(&current, 100, false, true); assert(current == 100);
+		wheel_speed = 1; test_speed_limit(&current, 100, false, true); assert(current == 0);
 	}
 	else if (!strcmp(test, "shift"))
 	{
@@ -431,10 +462,10 @@ int main(int argc, char **argv)
 #if HAS_TORQUE_SENSOR
 		g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_TORQUE;
 		g_config.assist_levels[0][1].torque_amplification_factor_x10 = 20;
-		start(); battery_process(); uint8_t current = 0; apply_pas_torque(&current);
+		start(); battery_process(); uint8_t current = 0; test_pas_torque(&current);
 		uint8_t expected = current;
 		g_config.use_voltage_compensation = 0;
-		current = 0; apply_pas_torque(&current); assert(current == expected && current > 0);
+		current = 0; test_pas_torque(&current); assert(current == expected && current > 0);
 #endif
 	}
 	else { fprintf(stderr, "Unknown test: %s\n", test); return 2; }

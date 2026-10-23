@@ -20,6 +20,13 @@
 #include "util.h"
 #include "system.h"
 
+// Preserve compile-time thermal tuning when its product requires a wider map.
+#if MAX_TEMPERATURE_RAMP_DOWN_INTERVAL * 100ul * (100ul - MAX_TEMPERATURE_LOW_CURRENT_PERCENT) <= 65535ul
+#define THERMAL_CURRENT_MAP MAP_U16_DESCENDING
+#else
+#define THERMAL_CURRENT_MAP MAP32
+#endif
+
 
 typedef struct
 {
@@ -32,12 +39,30 @@ typedef struct
 	int32_t max_wheel_speed_rpm_x10;
 
 	// pas
-	uint8_t keep_current_target_percent;
-	uint16_t keep_current_ramp_start_rpm_x10;
-	uint16_t keep_current_ramp_end_rpm_x10;
+    union
+    {
+        struct
+        {
+            uint8_t keep_current_target_percent;
+            uint16_t keep_current_ramp_start_rpm_x10;
+            uint16_t keep_current_ramp_end_rpm_x10;
+        } cadence;
+        struct
+        {
+            uint16_t last_ms;
+            uint8_t launch; // low 6 bits: launch grace; bit 7: low-cadence hysteresis
+            uint8_t scale;
+            uint8_t ceiling;
+        } efficiency;
+    } pas;
 
 } assist_level_data_t;
+#if defined(__SDCC_mcs51) || defined(__SDCC_stm8)
+typedef char pas_cache_must_stay_five_bytes[(sizeof(((assist_level_data_t*)0)->pas) == 5) ? 1 : -1];
+#endif
 
+// Only the foreground application and its level reload use this scratch byte.
+static uint8_t RAM_DATA requested_current;
 static uint8_t assist_level;
 static uint8_t operation_mode;
 static uint16_t global_speed_limit_rpm;
@@ -47,14 +72,11 @@ static uint16_t lvc_voltage_x100;
 static uint16_t lvc_ramp_down_start_voltage_x100;
 static uint16_t lvc_ramp_down_end_voltage_x100;
 
-static uint16_t full_voltage_range_x100;
-static uint16_t padded_voltage_range_x100;
-static uint16_t low_voltage_pad_x100;
-static uint16_t high_voltage_pad_x100;
 
 static assist_level_data_t assist_level_data;
 static uint16_t speed_limit_ramp_interval_rpm_x10;
 
+static RAM_BOOL configuration_changed;
 static RAM_BOOL cruise_paused;
 static int8_t temperature_contr_c;
 static int8_t temperature_motor_c;
@@ -117,22 +139,26 @@ uint8_t app_virtual_throttle()
 	return virtual_active ? virtual_throttle : 0;
 }
 
-void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent);
+static void apply_pas_cadence(uint8_t throttle_percent);
 uint8_t compensate_pas_current(uint8_t current);
+uint8_t adaptive_pas_current(void) RAM_REENTRANT;
 #if HAS_TORQUE_SENSOR
-void apply_pas_torque(uint8_t* target_current);
+static void apply_pas_torque(void);
 #endif
 
-void apply_pretension(uint8_t* target_current);
-void apply_cruise(uint8_t* target_current, uint8_t throttle_percent);
-bool apply_throttle(uint8_t* target_current, uint8_t throttle_percent);
-bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool pas_engaged, bool throttle_override);
-bool apply_thermal_limit(uint8_t* target_current);
-bool apply_low_voltage_limit(uint8_t* target_current);
-bool apply_shift_sensor_interrupt(uint8_t* target_current);
-bool apply_brake(uint8_t* target_current);
-void apply_current_ramp_up(uint8_t* target_current, bool enable) RAM_REENTRANT;
-void apply_current_ramp_down(uint8_t* target_current, bool enable);
+static void apply_pretension(void);
+static void apply_cruise(uint8_t throttle_percent);
+static bool apply_throttle(uint8_t throttle_percent);
+// Limiters report an active protection even when demand is already below its cap.
+static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool throttle_override);
+static bool apply_thermal_limit(void);
+static bool apply_low_voltage_limit(bool recover) RAM_REENTRANT;
+#if HAS_SHIFT_SENSOR_SUPPORT
+static bool apply_shift_sensor_interrupt(void);
+#endif
+static bool apply_brake(void);
+static void apply_current_ramp_up(bool enable) RAM_REENTRANT;
+static void apply_current_ramp_down(bool enable);
 
 bool check_power_block();
 void block_power_for(uint16_t ms);
@@ -141,7 +167,7 @@ void reload_assist_params();
 
 uint16_t convert_wheel_speed_kph_to_rpm(uint8_t speed_kph);
 
-void app_init()
+void app_init() RAM_REENTRANT
 {
 	motor_disable();
 	lights_disable();
@@ -149,16 +175,16 @@ void app_init()
 
 	lvc_voltage_x100 = g_config.low_cut_off_v * 100u;
 
-	full_voltage_range_x100 = EXPAND_U16(g_config.max_battery_x100v_u16h, g_config.max_battery_x100v_u16l) - lvc_voltage_x100;
-	low_voltage_pad_x100 = full_voltage_range_x100 * BATTERY_EMPTY_OFFSET_PERCENT / 100;
-	high_voltage_pad_x100 = full_voltage_range_x100 * BATTERY_FULL_OFFSET_PERCENT / 100;
-	padded_voltage_range_x100 = full_voltage_range_x100 - low_voltage_pad_x100 - high_voltage_pad_x100;
+	uint16_t full_voltage_range_x100 = EXPAND_U16(g_config.max_battery_x100v_u16h, g_config.max_battery_x100v_u16l) - lvc_voltage_x100;
+	uint16_t low_voltage_pad_x100 = (uint32_t)full_voltage_range_x100 * BATTERY_EMPTY_OFFSET_PERCENT / 100;
+	uint16_t high_voltage_pad_x100 = (uint32_t)full_voltage_range_x100 * BATTERY_FULL_OFFSET_PERCENT / 100;
+	uint16_t padded_voltage_range_x100 = full_voltage_range_x100 - low_voltage_pad_x100 - high_voltage_pad_x100;
 
 	// The LVC ramp down end is at 0% battery, which is LVC + the low padding value.
 	lvc_ramp_down_end_voltage_x100 = lvc_voltage_x100 + low_voltage_pad_x100;
 
 	// The LVC ramp down starts at LVC_RAMP_DOWN_OFFSET_PERCENT battery, using the padded range.
-	uint16_t lvc_ramp_down_offset_x100 = padded_voltage_range_x100 * LVC_RAMP_DOWN_OFFSET_PERCENT / 100;
+	uint16_t lvc_ramp_down_offset_x100 = (uint32_t)padded_voltage_range_x100 * LVC_RAMP_DOWN_OFFSET_PERCENT / 100;
 	lvc_ramp_down_start_voltage_x100 = lvc_ramp_down_end_voltage_x100 + lvc_ramp_down_offset_x100;
 
 	global_speed_limit_rpm = 0;
@@ -189,13 +215,20 @@ void app_init()
 	}
 }
 
+void app_configuration_changed()
+{
+    configuration_changed = true;
+    motor_set_target_current(0);
+    motor_disable();
+}
+
 void app_process()
 {
 	if (virtual_active && (uint32_t)(system_ms() - virtual_last_command_ms) >= 1500)
 	{
 		app_virtual_control(0, 0, 0);
 	}
-	uint8_t target_current = 0;
+	requested_current = 0;
 	uint8_t target_cadence = assist_level_data.level.max_cadence_percent;
 	uint8_t throttle_percent = throttle_map_response(virtual_active ? virtual_throttle : throttle_read());
 
@@ -209,32 +242,35 @@ void app_process()
 		pas_blocked_after_walk = false;
 	}
 
-	bool power_blocked = check_power_block();
+    // The undocumented BBS02 power-reset status remains reporting-only.
+	bool power_blocked = configuration_changed ||
+        (motor_status() & (MOTOR_ERROR_LVC | MOTOR_ERROR_HALL_SENSOR | MOTOR_ERROR_CURRENT_SENSE)) ||
+        check_power_block();
 	if (power_blocked)
 	{
-		target_current = 0;
+		requested_current = 0;
 		target_cadence = 0;
 	}
 	else if (assist_level == ASSIST_PUSH && g_config.use_push_walk)
 	{
-		target_current = 10;
+		requested_current = 10;
 	}
 	else
 	{
 		if (!pas_blocked_after_walk)
 		{
-			apply_pretension(&target_current);
-			apply_pas_cadence(&target_current, throttle_percent);
+			apply_pretension();
+			apply_pas_cadence(throttle_percent);
 #if HAS_TORQUE_SENSOR
-			apply_pas_torque(&target_current);
+			apply_pas_torque();
 #endif // HAS_TORQUE_SENSOR
 		}
 
-		pas_engaged = target_current > 0;
+		pas_engaged = requested_current > 0;
 
-		apply_cruise(&target_current, throttle_percent);
+		apply_cruise(throttle_percent);
 
-		throttle_override = apply_throttle(&target_current, throttle_percent);
+		throttle_override = apply_throttle(throttle_percent);
 
 		// override target cadence if configured in assist level
 		if (throttle_override &&
@@ -245,26 +281,39 @@ void app_process()
 		}
 	}
 
-	bool speed_limiting = apply_speed_limit(&target_current, throttle_percent, pas_engaged, throttle_override);
-	bool thermal_limiting = apply_thermal_limit(&target_current);
-	bool lvc_limiting = apply_low_voltage_limit(&target_current);
+	bool speed_limiting = apply_speed_limit(throttle_percent, pas_engaged, throttle_override);
+	bool thermal_limiting = apply_thermal_limit();
+	bool lvc_limiting = apply_low_voltage_limit(!throttle_override &&
+        (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY);
 	bool shift_limiting =
 #if HAS_SHIFT_SENSOR_SUPPORT
-		apply_shift_sensor_interrupt(&target_current);
+		apply_shift_sensor_interrupt();
 #else
 		false;
 #endif
 	bool is_limiting = speed_limiting || thermal_limiting || lvc_limiting || shift_limiting;
-	bool is_braking = apply_brake(&target_current);
+	bool is_braking = apply_brake();
 
-	apply_current_ramp_up(&target_current, is_limiting || !throttle_override);
+	apply_current_ramp_up(is_limiting || !throttle_override);
 	// Safety requests must not be raised again by the normal ramp-down.
-	apply_current_ramp_down(&target_current, !is_braking && !shift_limiting && !power_blocked && !speed_limiting);
+	apply_current_ramp_down(!is_braking && !is_limiting && !power_blocked &&
+        (!(assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE) || throttle_override ||
+         ((g_config.use_voltage_compensation & SYSTEM_EFFICIENCY_COMFORT) && requested_current > 0)));
+    if ((assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE) && !throttle_override)
+    {
+        requested_current = MIN(requested_current, assist_level_data.pas.efficiency.ceiling);
+        if (is_braking || power_blocked || (is_limiting && requested_current == 0))
+        {
+            assist_level_data.pas.efficiency.launch = 0;
+            assist_level_data.pas.efficiency.scale = 100;
+            assist_level_data.pas.efficiency.last_ms = (uint16_t)system_ms();
+        }
+    }
 
 	motor_set_target_speed(target_cadence);
-	motor_set_target_current(target_current);
+	motor_set_target_current(requested_current);
 
-	if (target_current > 0)
+	if (requested_current > 0)
 	{
 		motor_enable();
 	}
@@ -439,20 +488,26 @@ uint8_t app_get_temperature()
 	return (uint8_t)temp_max;
 }
 
-void apply_pretension(uint8_t* target_current)
+static void apply_pretension(void)
 {
+    // A zero-current PAS level must not acquire an idle demand from pretension.
+    if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && assist_level_data.level.target_current_percent == 0)
+    {
+        return;
+    }
+
 	uint16_t current_speed_rpm_x10 = speed_sensor_get_rpm_x10();
 
 	if (g_config.use_speed_sensor && g_config.use_pretension && current_speed_rpm_x10 > pretension_cutoff_speed_rpm_x10)
 	{
-		*target_current = 1;
+		requested_current = 1;
 	}
 	return;
 }
 
 uint8_t compensate_pas_current(uint8_t current)
 {
-	if (!g_config.use_voltage_compensation || current == 0)
+	if (!(g_config.use_voltage_compensation & SYSTEM_VOLTAGE_COMPENSATION) || current == 0)
 	{
 		return current;
 	}
@@ -473,8 +528,113 @@ uint8_t compensate_pas_current(uint8_t current)
 	return (uint8_t)MIN(compensated, limit);
 }
 
-void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent)
+// Integer power envelope with a bounded ceiling cache. No efficiency map or phase-current estimate is assumed.
+uint8_t adaptive_pas_current(void) RAM_REENTRANT
 {
+    assist_level_data.pas.efficiency.ceiling = 0;
+    if (!pas_is_pedaling_forwards() || pas_get_pulse_counter() <= g_config.pas_start_delay_pulses ||
+        g_config.max_current_amps == 0 || g_config.low_cut_off_v == 0 ||
+        assist_level_data.level.torque_amplification_factor_x10 == 0)
+        return 0;
+
+    uint16_t voltage_x10 = motor_get_battery_voltage_x10();
+    if (voltage_x10 <= (uint16_t)g_config.low_cut_off_v * 10u || voltage_x10 > 1000u)
+        return 0;
+    // The higher reading avoids boosting from a transient sag or a lagging filter on recovery.
+    uint16_t filtered_x10 = battery_get_filtered_voltage_x100() / 10u;
+    voltage_x10 = MAX(voltage_x10, filtered_x10);
+
+    // Launch floor is 25% of the budget; full budget is available at 60 rpm.
+    uint16_t cadence_x10 = CLAMP(pas_get_cadence_rpm_x10(), 150u, 600u);
+    uint16_t power_w_x10 = ((uint32_t)assist_level_data.level.torque_amplification_factor_x10 * cadence_x10) / 6u;
+    uint32_t percent = ((uint32_t)power_w_x10 * 100u) / ((uint32_t)voltage_x10 * g_config.max_current_amps);
+    percent = MIN(percent, (MIN(assist_level_data.level.target_current_percent, 100u)));
+    assist_level_data.pas.efficiency.ceiling = (uint8_t)percent;
+    if (g_config.use_voltage_compensation & SYSTEM_EFFICIENCY_COMFORT)
+    {
+        // Conservatively reconstruct the full-budget ceiling from the already
+        // floored base request. Reuse existing stack operands, never static spills.
+        assist_level_data.pas.efficiency.ceiling = (uint8_t)(MIN(
+            ((uint16_t)percent * 600u) / cadence_x10,
+            assist_level_data.level.target_current_percent));
+    }
+    return (uint8_t)percent;
+}
+
+// Experimental request shaping, not a live measured motor-efficiency map.
+// Published sweeps justify a low-cadence/load hypothesis, never a phase-current limit.
+static uint8_t efficiency_pas_current(uint8_t current) RAM_REENTRANT
+{
+    if ((g_config.use_voltage_compensation & SYSTEM_EFFICIENCY_PROFILE_MASK) != CONTROLLER_EFFICIENCY_PROFILE ||
+        pas_get_cadence_rpm_x10() == 0
+#if HAS_TORQUE_SENSOR
+        || !torque_sensor_ok()
+#endif
+        )
+    {
+        assist_level_data.pas.efficiency.launch = 0;
+        assist_level_data.pas.efficiency.scale = 100;
+        return 0;
+    }
+    if (current == 0 || !g_config.use_speed_sensor || assist_level_data.max_wheel_speed_rpm_x10 <= 0)
+    {
+        assist_level_data.pas.efficiency.launch = 0;
+        assist_level_data.pas.efficiency.scale = 100;
+        assist_level_data.pas.efficiency.last_ms = (uint16_t)system_ms();
+        return current; // Missing road speed: retain the unshaped, bounded PAS budget.
+    }
+    if ((uint16_t)((uint16_t)system_ms() - assist_level_data.pas.efficiency.last_ms) >= 100u)
+    {
+        assist_level_data.pas.efficiency.last_ms = (uint16_t)system_ms();
+        if ((assist_level_data.pas.efficiency.launch & 0x3fu) < 30u)
+            ++assist_level_data.pas.efficiency.launch;
+        else
+        {
+            // Keep hill starts and low-speed climbing unmodified. These are tunable
+            // experimental policy constants, not thresholds fitted to a factory map.
+            uint16_t cadence = pas_get_cadence_rpm_x10();
+            uint16_t speed = speed_sensor_get_rpm_x10();
+            // The unshaped PAS request is budget * clamp(cadence / 600, 1/4, 1).
+            // Its own budget fraction reaches 40% at 24 rpm and falls below 30%
+            // below 18 rpm. The level-relative alternative covers current clipping.
+            // This is a requested-demand proxy, never measured motor load. Cancelling
+            // the common budget factor avoids division and extra runtime state.
+            if (cadence < EFFICIENCY_LOW_CADENCE_X10 &&
+                (cadence >= 240u ||
+                 (uint16_t)current * 5u >= (uint16_t)assist_level_data.level.target_current_percent * 2u))
+                assist_level_data.pas.efficiency.launch |= 0x80u;
+            else if (cadence >= EFFICIENCY_LOW_CADENCE_X10 + 100u ||
+                (cadence < 180u &&
+                 (uint16_t)current * 10u < (uint16_t)assist_level_data.level.target_current_percent * 3u))
+                assist_level_data.pas.efficiency.launch &= 0x3fu;
+            // Speed approach is handled once, after independent throttle arbitration.
+            if ((assist_level_data.pas.efficiency.launch & 0x80u) &&
+                (uint32_t)speed * 4u >= (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 3u)
+            {
+                if (assist_level_data.pas.efficiency.scale > EFFICIENCY_MIN_SCALE)
+                    --assist_level_data.pas.efficiency.scale;
+            }
+            else if (assist_level_data.pas.efficiency.scale < 100u)
+                ++assist_level_data.pas.efficiency.scale;
+        }
+    }
+    // Round the reduction down: a small positive budget must not disappear just
+    // because a fractional derating would otherwise truncate a whole current step.
+    return current - (uint16_t)current * (100u - assist_level_data.pas.efficiency.scale) / 100u;
+}
+
+static void apply_pas_cadence(uint8_t throttle_percent)
+{
+    if ((assist_level_data.level.flags & (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE)) ==
+        (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE))
+    {
+        // Replace pretension too: this variant coasts at zero PAS demand and fails closed.
+        requested_current = adaptive_pas_current();
+        // The bounded power helper also updates the optional comfort ceiling.
+        if (assist_level_data.level.flags & ASSIST_FLAG_PAS_VARIABLE)
+            requested_current = efficiency_pas_current(requested_current);
+        return;
+    }
 	if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && !(assist_level_data.level.flags & ASSIST_FLAG_PAS_TORQUE))
 	{
 		if (pas_is_pedaling_forwards() && pas_get_pulse_counter() > g_config.pas_start_delay_pulses)
@@ -482,33 +642,40 @@ void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent)
 			if (assist_level_data.level.flags & ASSIST_FLAG_PAS_VARIABLE)
 			{
 				uint8_t current = (uint8_t)MAP16(throttle_percent, 0, 100, 0, assist_level_data.level.target_current_percent);
-				if (current > *target_current)
+				if (current > requested_current)
 				{
-					*target_current = current;
+					requested_current = current;
 				}
 			}
 			else
 			{
-				if (assist_level_data.level.target_current_percent > *target_current)
+				if (assist_level_data.level.target_current_percent > requested_current)
 				{
-					*target_current = assist_level_data.level.target_current_percent;
+					requested_current = assist_level_data.level.target_current_percent;
 				}
 
 				// apply "keep current" ramp
 				if (g_config.pas_keep_current_percent < 100)
 				{
-					if (*target_current > assist_level_data.keep_current_target_percent &&
-						pas_get_cadence_rpm_x10() > assist_level_data.keep_current_ramp_start_rpm_x10)
+					if (requested_current > assist_level_data.pas.cadence.keep_current_target_percent &&
+						pas_get_cadence_rpm_x10() > assist_level_data.pas.cadence.keep_current_ramp_start_rpm_x10)
 					{
-						uint32_t cadence = MIN(pas_get_cadence_rpm_x10(), assist_level_data.keep_current_ramp_end_rpm_x10);
+                        if (assist_level_data.pas.cadence.keep_current_ramp_end_rpm_x10 <= assist_level_data.pas.cadence.keep_current_ramp_start_rpm_x10)
+                        {
+                            requested_current = assist_level_data.pas.cadence.keep_current_target_percent;
+                        }
+                        else
+                        {
+							uint32_t cadence = MIN(pas_get_cadence_rpm_x10(), assist_level_data.pas.cadence.keep_current_ramp_end_rpm_x10);
 
-						// ramp down current towards keep_current_target_percent with rpm above keep_current_ramp_start_rpm_x10
-						*target_current = MAP32(
-							cadence,	// in
-							assist_level_data.keep_current_ramp_start_rpm_x10,		// in_min
-							assist_level_data.keep_current_ramp_end_rpm_x10,		// in_max
-							*target_current,										// out_min
-							assist_level_data.keep_current_target_percent);			// out_max
+							// ramp down current towards keep_current_target_percent with rpm above keep_current_ramp_start_rpm_x10
+							requested_current = MAP32(
+								cadence,	// in
+								assist_level_data.pas.cadence.keep_current_ramp_start_rpm_x10,		// in_min
+								assist_level_data.pas.cadence.keep_current_ramp_end_rpm_x10,		// in_max
+								requested_current,										// out_min
+								assist_level_data.pas.cadence.keep_current_target_percent);			// out_max
+                        }
 					}
 				}
 			}
@@ -516,15 +683,15 @@ void apply_pas_cadence(uint8_t* target_current, uint8_t throttle_percent)
 			// Compensate only an active cadence/variable PAS request, before
 			// throttle selection and all safety limits. Torque PAS already
 			// calculates current from power and voltage.
-			*target_current = compensate_pas_current(*target_current);
+			requested_current = compensate_pas_current(requested_current);
 		}
 	}
 }
 
 #if HAS_TORQUE_SENSOR
-void apply_pas_torque(uint8_t* target_current)
+static void apply_pas_torque(void)
 {
-	if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && (assist_level_data.level.flags & ASSIST_FLAG_PAS_TORQUE))
+	if ((assist_level_data.level.flags & ASSIST_FLAG_PAS) && (assist_level_data.level.flags & ASSIST_FLAG_PAS_TORQUE) && !(assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE))
 	{
 		if (pas_is_pedaling_forwards() && (pas_get_pulse_counter() > g_config.pas_start_delay_pulses || speed_sensor_is_moving()))
 		{
@@ -559,21 +726,21 @@ void apply_pas_torque(uint8_t* target_current)
 				tmp_percent = 1;
 			}
 			// limit to maximum assist current for set level
-			else if (tmp_percent > assist_level_data.level.target_current_percent)
+			if (tmp_percent > assist_level_data.level.target_current_percent)
 			{
 				tmp_percent = assist_level_data.level.target_current_percent;
 			}
 
-			if (tmp_percent > *target_current)
+			if (tmp_percent > requested_current)
 			{
-				*target_current = tmp_percent;
+				requested_current = tmp_percent;
 			}
 		}
 	}
 }
 #endif
 
-void apply_cruise(uint8_t* target_current, uint8_t throttle_percent)
+static void apply_cruise(uint8_t throttle_percent)
 {
 	static RAM_BOOL cruise_block_throttle_return = false;
 
@@ -615,27 +782,27 @@ void apply_cruise(uint8_t* target_current, uint8_t throttle_percent)
 
 		if (cruise_paused)
 		{
-			*target_current = 0;
+			requested_current = 0;
 		}
 		else
 		{
-			if (assist_level_data.level.target_current_percent > *target_current)
+			if (assist_level_data.level.target_current_percent > requested_current)
 			{
-				*target_current = assist_level_data.level.target_current_percent;
+				requested_current = assist_level_data.level.target_current_percent;
 			}
 		}
 	}
 }
 
-bool apply_throttle(uint8_t* target_current, uint8_t throttle_percent)
+static bool apply_throttle(uint8_t throttle_percent)
 {
 	if ((assist_level_data.level.flags & ASSIST_FLAG_THROTTLE) && throttle_percent > 0 && throttle_ok())
 	{
 		uint8_t current = (uint8_t)MAP16(throttle_percent, 0, 100, g_config.throttle_start_percent, assist_level_data.level.max_throttle_current_percent);
 
-		if (current >= *target_current)
+		if (current >= requested_current)
 		{
-			*target_current = current;
+			requested_current = current;
 			return true;
 		}
 	}
@@ -644,7 +811,7 @@ bool apply_throttle(uint8_t* target_current, uint8_t throttle_percent)
 }
 
 
-bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool pas_engaged, bool throttle_override)
+static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool throttle_override)
 {
 	static RAM_BOOL speed_limiting = false;
 
@@ -712,7 +879,7 @@ bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool p
 
 			if (current_speed_rpm_x10 >= max_speed_rpm_x10)
 			{
-				*target_current = 0;
+				requested_current = 0;
 				// Report limiting even for a zero input so an earlier current
 				// cannot be restored by the normal ramp-down state.
 				return true;
@@ -720,12 +887,25 @@ bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool p
 			else
 			{
 				// linear ramp down when approaching max speed.
-				uint8_t tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_rpm_x10, *target_current, 0);
-				if (*target_current > tmp)
+                bool efficiency_pas = !throttle_override &&
+                    (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY;
+                uint8_t tmp = efficiency_pas ? 100u : requested_current;
+                tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_rpm_x10, tmp, 0);
+                if (efficiency_pas)
+                {
+                    // Two bounded quadratics ease both ends of the speed envelope.
+                    // Only PAS uses this curve; throttle keeps the original linear limit.
+                    if (tmp <= 50u)
+                        tmp = (uint16_t)tmp * tmp / 50u;
+                    else
+                        tmp = 100u - (uint16_t)(100u - tmp) * (100u - tmp) / 50u;
+                    tmp = (uint16_t)requested_current * tmp / 100u;
+                }
+				if (requested_current > tmp)
 				{
-					*target_current = tmp;
-					return true;
+					requested_current = tmp;
 				}
+				return true;
 			}
 		}
 	}
@@ -733,20 +913,19 @@ bool apply_speed_limit(uint8_t* target_current, uint8_t throttle_percent, bool p
 	return false;
 }
 
-bool apply_thermal_limit(uint8_t* target_current)
+static bool apply_thermal_limit(void)
 {
 	static uint32_t next_log_temp_ms = 10000;
 
 	static RAM_BOOL temperature_limiting = false;
 
 	int16_t temp_contr_x100 = temperature_contr_x100();
-	temperature_contr_c = temp_contr_x100 / 100;
+	temperature_contr_c = (int8_t)(CLAMP(temp_contr_x100 / 100, -128, 127));
 
 	int16_t temp_motor_x100 = temperature_motor_x100();
-	temperature_motor_c = temp_motor_x100 / 100;
+	temperature_motor_c = (int8_t)(CLAMP(temp_motor_x100 / 100, -128, 127));
 
 	int16_t max_temp_x100 = MAX(temp_contr_x100, temp_motor_x100);
-	int8_t max_temp = MAX(temperature_contr_c, temperature_motor_c);
 
 	if (eventlog_is_enabled() && g_config.use_temperature_sensor && system_ms() > next_log_temp_ms)
 	{
@@ -754,7 +933,7 @@ bool apply_thermal_limit(uint8_t* target_current)
 		eventlog_write_data(EVT_DATA_TEMPERATURE, (uint16_t)temperature_motor_c << 8 | temperature_contr_c);
 	}
 
-	if (max_temp >= (MAX_TEMPERATURE - MAX_TEMPERATURE_RAMP_DOWN_INTERVAL))
+	if (max_temp_x100 >= (MAX_TEMPERATURE - MAX_TEMPERATURE_RAMP_DOWN_INTERVAL) * 100)
 	{
 		if (!temperature_limiting)
 		{
@@ -764,10 +943,12 @@ bool apply_thermal_limit(uint8_t* target_current)
 
 		if (max_temp_x100 > MAX_TEMPERATURE * 100)
 		{
-			max_temp_x100 = MAX_TEMPERATURE * 100;
+			// Above the existing maximum temperature, derating alone is insufficient.
+            requested_current = 0;
+            return true;
 		}
 
-		uint8_t tmp = (uint8_t)MAP32(
+		uint8_t tmp = (uint8_t)THERMAL_CURRENT_MAP(
 			max_temp_x100,													// value
 			(MAX_TEMPERATURE - MAX_TEMPERATURE_RAMP_DOWN_INTERVAL) * 100,	// in_min
 			MAX_TEMPERATURE * 100,											// in_max
@@ -775,11 +956,11 @@ bool apply_thermal_limit(uint8_t* target_current)
 			MAX_TEMPERATURE_LOW_CURRENT_PERCENT								// out_max
 		);
 
-		if (*target_current > tmp)
+		if (requested_current > tmp)
 		{
-			*target_current = tmp;
-			return true;
+			requested_current = tmp;
 		}
+		return true;
 	}
 	else
 	{
@@ -793,23 +974,60 @@ bool apply_thermal_limit(uint8_t* target_current)
 	return false;
 }
 
-bool apply_low_voltage_limit(uint8_t* target_current)
+static bool apply_low_voltage_limit(bool recover) RAM_REENTRANT
 {
+    // Reuse the existing four-byte filter allocation, including recovery dwell.
+    // Initialize the struct member directly: no assumption about MCU byte order.
+    static union
+    {
+        struct { uint16_t voltage; uint8_t stable; } value;
+        uint32_t allocation;
+    } filter = {{10000u, 0u}};
+#if defined(__SDCC_mcs51) || defined(__SDCC_stm8)
+    typedef char lvc_filter_must_not_grow[(sizeof(filter) == 4) ? 1 : -1];
+#endif
+    // A missing/invalid voltage or the actual cutoff stops every demand source immediately.
+    uint16_t raw_voltage_x10 = motor_get_battery_voltage_x10();
+    if (raw_voltage_x10 <= (uint16_t)g_config.low_cut_off_v * 10u || raw_voltage_x10 > 1000u)
+    {
+        filter.value.stable = 0;
+        requested_current = 0;
+        return true;
+    }
 	static uint32_t next_log_volt_ms = 10000;
 	static RAM_BOOL lvc_limiting = false;
 
-	static uint32_t next_voltage_reading_ms = 125;
-	static int32_t flt_min_bat_volt_x100 = 100 * 100;
+	static uint32_t last_voltage_reading_ms;
 
-	if (system_ms() > next_voltage_reading_ms)
+    uint32_t elapsed = system_ms() - last_voltage_reading_ms;
+    // A mode/throttle change or a missed sample breaks the recovery dwell.
+    if (!recover || elapsed > 250u)
+    {
+        filter.value.stable = 0;
+    }
+	if (elapsed > 125u)
 	{
-		next_voltage_reading_ms = system_ms() + 125;
-		int32_t voltage_reading_x100 = motor_get_battery_voltage_x10() * 10ul;
+		last_voltage_reading_ms += elapsed;
+		uint16_t voltage_reading_x100 = raw_voltage_x10 * 10u;
 
-		if (voltage_reading_x100 < flt_min_bat_volt_x100)
-		{
-			flt_min_bat_volt_x100 = EXPONENTIAL_FILTER(flt_min_bat_volt_x100, voltage_reading_x100, 8);
-		}
+        if (voltage_reading_x100 < filter.value.voltage)
+        {
+            // Keep the original fast downward response and cancel recovery dwell.
+            filter.value.voltage -= (filter.value.voltage - voltage_reading_x100) / 8u;
+            filter.value.stable = 0;
+        }
+        else if (recover && voltage_reading_x100 >= filter.value.voltage + 50u &&
+            voltage_reading_x100 >= lvc_ramp_down_end_voltage_x100 + 50u)
+        {
+            // Require eight consecutive samples (~1 s), then recover four times
+            // more slowly than a sag. A 0.5 V deadband rejects small rebounds.
+            if (filter.value.stable < 7u)
+                ++filter.value.stable;
+            else
+                filter.value.voltage += (voltage_reading_x100 - filter.value.voltage) / 32u;
+        }
+        else
+            filter.value.stable = 0;
 
 		if (eventlog_is_enabled() && system_ms() > next_log_volt_ms)
 		{
@@ -818,7 +1036,7 @@ bool apply_low_voltage_limit(uint8_t* target_current)
 		}
 	}
 
-	uint16_t voltage_x100 = flt_min_bat_volt_x100;
+	uint16_t voltage_x100 = filter.value.voltage;
 
 	if (voltage_x100 <= lvc_ramp_down_start_voltage_x100)
 	{
@@ -834,7 +1052,7 @@ bool apply_low_voltage_limit(uint8_t* target_current)
 		}
 
 		// Ramp down power until LVC_LOW_CURRENT_PERCENT when approaching LVC
-		int8_t tmp = (int8_t)MAP32(
+		int16_t tmp = (int16_t)MAP32(
 			voltage_x100,						// value
 			lvc_ramp_down_end_voltage_x100,		// in_min
 			lvc_ramp_down_start_voltage_x100,	// in_max
@@ -843,18 +1061,18 @@ bool apply_low_voltage_limit(uint8_t* target_current)
 		);
 		uint8_t tmp2 = (uint8_t)CLAMP(tmp, 0, 100);
 
-		if (*target_current > tmp2)
+		if (requested_current > tmp2)
 		{
-			*target_current = tmp2;
-			return true;
+			requested_current = tmp2;
 		}
+		return true;
 	}
 
 	return false;
 }
 
 #if HAS_SHIFT_SENSOR_SUPPORT
-bool apply_shift_sensor_interrupt(uint8_t* target_current)
+static bool apply_shift_sensor_interrupt(void)
 {
 	static uint32_t shift_sensor_act_ms = 0;
 	static RAM_BOOL shift_sensor_last = false;
@@ -897,7 +1115,7 @@ bool apply_shift_sensor_interrupt(uint8_t* target_current)
 		return false;
 	}
 
-	if (system_ms() >= shift_sensor_act_ms)
+	if ((uint32_t)(system_ms() - shift_sensor_act_ms) < 0x80000000ul)
 	{
 		// Shift is finished, reset function state.
 		shift_sensor_interrupting = false;
@@ -910,7 +1128,7 @@ bool apply_shift_sensor_interrupt(uint8_t* target_current)
 		return false;
 	}
 
-	if ((*target_current) > g_config.shift_interrupt_current_threshold_percent)
+	if ((requested_current) > g_config.shift_interrupt_current_threshold_percent)
 	{
 		if (!shift_sensor_logged)
 		{
@@ -919,16 +1137,16 @@ bool apply_shift_sensor_interrupt(uint8_t* target_current)
 			eventlog_write_data(EVT_DATA_SHIFT_SENSOR, 1);
 		}
 		// Set target current based on desired current threshold during shift.
-		*target_current = g_config.shift_interrupt_current_threshold_percent;
+		requested_current = g_config.shift_interrupt_current_threshold_percent;
 
 		return true;
 	}
 
-	return false;
+	return g_config.shift_interrupt_current_threshold_percent < 100u;
 }
 #endif
 
-bool apply_brake(uint8_t* target_current)
+static bool apply_brake(void)
 {
 	bool is_braking = brake_is_activated();
 
@@ -939,7 +1157,7 @@ bool apply_brake(uint8_t* target_current)
 
 	if (is_braking)
 	{
-		*target_current = 0;
+		requested_current = 0;
 	}
 
 	return is_braking;
@@ -962,55 +1180,125 @@ uint16_t current_ramp_curve(uint16_t progress, uint8_t smoothness) RAM_REENTRANT
 	return (uint16_t)(((uint32_t)progress * (100u - smoothness) + smooth * smoothness) / 100u);
 }
 
-void apply_current_ramp_up(uint8_t* target_current, bool enable) RAM_REENTRANT
+static void apply_current_ramp_up(bool enable) RAM_REENTRANT
 {
-	static uint8_t curve_start_current;
-	static uint8_t curve_target_current;
-	static uint8_t curve_output;
-	static uint32_t curve_start_ms;
+    static union
+    {
+        struct
+        {
+            uint8_t curve_start_current, curve_target_current, curve_output;
+            uint32_t curve_start_ms;
+        } legacy;
+        struct
+        {
+            uint16_t position, velocity, last_ms;
+        } tracking;
+    } state;
+#if defined(__SDCC_mcs51) || defined(__SDCC_stm8)
+    typedef char ramp_state_must_not_grow[(sizeof(state) <= 7) ? 1 : -1];
+#endif
+    if (assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE)
+    {
+        uint16_t target = (uint16_t)requested_current << 7;
+        uint16_t now16 = (uint16_t)system_ms();
+        if (!enable || target <= state.tracking.position)
+        {
+            // Stops and falling safety requests take effect immediately.
+            // Small Efficiency demand jitter must not restart the 20 ms clock
+            // or erase velocity on every application tick. Output still clamps
+            // immediately to every lower request, including protective limits.
+            if (!enable || target == 0 || state.tracking.position - target > 128u ||
+                (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) != ASSIST_FLAG_PAS_EFFICIENCY)
+            {
+                state.tracking.velocity = 0;
+                state.tracking.last_ms = now16;
+            }
+            state.tracking.position = target;
+        }
+        else if ((uint16_t)(now16 - state.tracking.last_ms) >= 20u)
+        {
+            // Advance one 20 ms step only. Missed deadlines cannot create catch-up spikes.
+            state.tracking.last_ms = now16;
+            // Q7 percent per 20 ms: 255 * 256 <= 65280, so no 32-bit divide.
+            uint16_t maximum = ((uint16_t)g_config.current_ramp_amps_s * 256u) /
+                (MAX(g_config.max_current_amps, 1u));
+            uint16_t acceleration = MAX(maximum / (1u + g_config.current_ramp_smoothness_percent / 10u), 1u);
+            uint16_t distance = target - state.tracking.position;
+            uint16_t velocity = state.tracking.velocity;
+            // Distance feedback eases the final approach without square roots or
+            // a 32-bit stopping-distance divide. Target changes retain velocity;
+            // only arrival, falling demand and hard stops can truncate a step.
+            uint16_t desired = g_config.current_ramp_smoothness_percent == 0 ? maximum :
+                (MIN(maximum, (MAX(distance / 4u, 1u))));
+            if (velocity < desired)
+                velocity = MIN(velocity + acceleration, desired);
+            else if (velocity > desired)
+                velocity = MAX(velocity > acceleration ? velocity - acceleration : 0u, desired);
+            state.tracking.velocity = velocity;
+            state.tracking.position += MIN(distance, velocity);
+        }
+        requested_current = state.tracking.position >> 7;
+        return;
+    }
 	uint32_t now = system_ms();
-	if (!enable || *target_current <= curve_output)
+	if (!enable || requested_current <= state.legacy.curve_output)
 	{
-		curve_output = *target_current;
-		curve_target_current = *target_current;
-		curve_start_ms = now;
+		state.legacy.curve_output = requested_current;
+        state.legacy.curve_start_current = state.legacy.curve_output;
+		state.legacy.curve_target_current = requested_current;
+		state.legacy.curve_start_ms = now;
 	}
 	else
 	{
-		if (*target_current != curve_target_current)
+		if (requested_current != state.legacy.curve_target_current)
 		{
-			curve_start_current = curve_output;
-			curve_target_current = *target_current;
-			curve_start_ms = now;
+            // Adaptive demand can change at each cadence sample. Preserve the rising
+            // segment while requests stay above its output, even if samples alternate.
+            if (!(assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE) ||
+                state.legacy.curve_target_current <= state.legacy.curve_start_current)
+            {
+                state.legacy.curve_start_current = state.legacy.curve_output;
+                state.legacy.curve_start_ms = now;
+                state.legacy.curve_target_current = requested_current;
+            }
+            else if (requested_current > state.legacy.curve_target_current)
+            {
+                state.legacy.curve_target_current = requested_current;
+            }
+            // A lower request above the output caps the existing envelope; it does
+            // not shorten that envelope and cause an upward current step.
 		}
-		uint8_t span = curve_target_current - curve_start_current;
+		uint8_t span = state.legacy.curve_target_current - state.legacy.curve_start_current;
 		uint32_t duration_ms = ((uint32_t)span * g_config.max_current_amps * 10u) /
 			(MAX(g_config.current_ramp_amps_s, 1u));
 		// offset for time overshoot to not accumulate large ramp error
 		// Elapsed time also avoids the old one-percent-per-application-tick ceiling.
-		uint32_t elapsed = now - curve_start_ms;
+		uint32_t elapsed = now - state.legacy.curve_start_ms;
 		uint16_t progress = duration_ms == 0 || elapsed >= duration_ms ? 1000u :
 			(uint16_t)((elapsed * 1000ul) / duration_ms);
-		curve_output = curve_start_current + (uint8_t)(((uint32_t)span *
-			current_ramp_curve(progress, g_config.current_ramp_smoothness_percent)) / 1000u);
-		*target_current = MIN(*target_current, curve_output);
+        uint8_t candidate = state.legacy.curve_start_current + (uint8_t)(((uint32_t)span *
+            current_ramp_curve(progress, g_config.current_ramp_smoothness_percent)) / 1000u);
+        if (assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE)
+            candidate = MAX(candidate, state.legacy.curve_output);
+        state.legacy.curve_output = MIN(requested_current, candidate);
+        requested_current = state.legacy.curve_output;
 	}
 }
 
-void apply_current_ramp_down(uint8_t* target_current, bool enable)
+static void apply_current_ramp_down(bool enable)
 {
 	static uint8_t ramp_down_target_current = 0;
 	static uint32_t last_ramp_down_decrement_ms = 0;
 
 	// apply fast ramp down if coming from high target current (> 50%)
-	if (enable && *target_current < ramp_down_target_current)
+	if (enable && requested_current < ramp_down_target_current)
 	{
 		uint32_t now = system_ms();
 		uint16_t time_diff = now - last_ramp_down_decrement_ms;
 
 		if (time_diff >= 10)
 		{
-			uint8_t diff = ramp_down_target_current - *target_current;
+			uint8_t diff = ramp_down_target_current - requested_current;
 
 			if (diff >= CURRENT_RAMP_DOWN_PERCENT_10MS)
 			{
@@ -1032,11 +1320,11 @@ void apply_current_ramp_down(uint8_t* target_current, bool enable)
 			}
 		}
 
-		*target_current = ramp_down_target_current;
+		requested_current = ramp_down_target_current;
 	}
 	else
 	{
-		ramp_down_target_current = *target_current;
+		ramp_down_target_current = requested_current;
 		last_ramp_down_decrement_ms = 0;
 	}
 }
@@ -1070,15 +1358,32 @@ void reload_assist_params()
 {
 	if (assist_level < ASSIST_PUSH)
 	{
-		assist_level_data.level = g_config.assist_levels[operation_mode][assist_level];
+        if ((assist_level_data.level.flags | g_config.assist_levels[operation_mode][assist_level].flags) & ASSIST_FLAG_PAS_ADAPTIVE)
+        {
+            // Reuse the foreground current byte while reloading; it is recomputed
+            // by the next application cycle. This resets a hidden envelope on
+            // level/mode changes without adding RAM or crossing union members.
+            requested_current = motor_get_target_current();
+            assist_level_data.level = g_config.assist_levels[operation_mode][assist_level];
+            apply_current_ramp_up(false);
+        }
+        else
+            assist_level_data.level = g_config.assist_levels[operation_mode][assist_level];
 
 		assist_level_data.max_wheel_speed_rpm_x10 = ((int32_t)global_speed_limit_rpm * assist_level_data.level.max_speed_percent) / 10;
 
-		if (assist_level_data.level.flags & ASSIST_FLAG_PAS)
+        if (assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE)
+        {
+            assist_level_data.pas.efficiency.last_ms = (uint16_t)system_ms();
+            assist_level_data.pas.efficiency.launch = 0;
+            assist_level_data.pas.efficiency.scale = 100;
+            assist_level_data.pas.efficiency.ceiling = 0;
+        }
+        else if (assist_level_data.level.flags & ASSIST_FLAG_PAS)
 		{
-			assist_level_data.keep_current_target_percent = (uint8_t)((uint16_t)g_config.pas_keep_current_percent * assist_level_data.level.target_current_percent / 100);
-			assist_level_data.keep_current_ramp_start_rpm_x10 = g_config.pas_keep_current_cadence_rpm * 10;
-			assist_level_data.keep_current_ramp_end_rpm_x10 = (uint16_t)(((uint32_t)assist_level_data.level.max_cadence_percent * MAX_CADENCE_RPM_X10) / 100);
+			assist_level_data.pas.cadence.keep_current_target_percent = (uint8_t)((uint16_t)g_config.pas_keep_current_percent * assist_level_data.level.target_current_percent / 100);
+			assist_level_data.pas.cadence.keep_current_ramp_start_rpm_x10 = g_config.pas_keep_current_cadence_rpm * 10;
+			assist_level_data.pas.cadence.keep_current_ramp_end_rpm_x10 = (uint16_t)(((uint32_t)assist_level_data.level.max_cadence_percent * MAX_CADENCE_RPM_X10) / 100);
 		}
 
 		// pause cruise if swiching level
@@ -1088,6 +1393,14 @@ void reload_assist_params()
 	// otherwise data of previous assist level is kept.
 	else if (assist_level == ASSIST_PUSH && g_config.use_push_walk)
 	{
+        if (assist_level_data.level.flags & ASSIST_FLAG_PAS_ADAPTIVE)
+        {
+            // Walk uses the legacy union member. Initialize it before that member
+            // is read, bounding its start to the existing ten-percent walk demand.
+            assist_level_data.level.flags = 0;
+            requested_current = MIN(motor_get_target_current(), 10u);
+            apply_current_ramp_up(false);
+        }
 		assist_level_data.level.flags = 0;
 		assist_level_data.level.target_current_percent = 0;
 		assist_level_data.level.max_speed_percent = 0;
@@ -1100,6 +1413,17 @@ void reload_assist_params()
 
 uint16_t convert_wheel_speed_kph_to_rpm(uint8_t speed_kph)
 {
-	float radius_mm = EXPAND_U16(g_config.wheel_size_inch_x10_u16h, g_config.wheel_size_inch_x10_u16l) * 1.27f; // g_config.wheel_size_inch_x10 / 2.f * 2.54f;
+    uint16_t wheel = EXPAND_U16(g_config.wheel_size_inch_x10_u16h, g_config.wheel_size_inch_x10_u16l);
+    if (wheel < 100u || wheel > 400u) return 0;
+#if defined(TSDZ2)
+    // Integer replacement for the original single-precision conversion, verified over
+    // all supported wheel sizes (10.0-40.0 inches) and all byte-sized speed inputs.
+    // The one legacy floating-point rounding boundary is preserved explicitly.
+    uint16_t rpm = ((uint32_t)speed_kph * 160826ul) / ((uint16_t)wheel * 77u);
+    if (wheel == 291u && speed_kph == 231u) --rpm;
+    return rpm;
+#else
+	float radius_mm = wheel * 1.27f; // g_config.wheel_size_inch_x10 / 2.f * 2.54f;
 	return (uint16_t)(25000.f / (3 * 3.14159f * radius_mm) * speed_kph);
+#endif
 }

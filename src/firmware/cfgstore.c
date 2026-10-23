@@ -7,6 +7,7 @@
  */
 
 #include "cfgstore.h"
+#include <stddef.h>
 #include "eeprom.h"
 #include "eventlog.h"
 #include "uart.h"
@@ -44,8 +45,8 @@ static header_t header;
 config_t g_config;
 pstate_t g_pstate;
 
-static uint8_t read(uint8_t page, uint8_t version, uint8_t* dst, uint8_t size);
-static uint8_t write(uint8_t page, uint8_t version, uint8_t* src, uint8_t size);
+static uint8_t read(uint8_t page, uint8_t version, uint8_t RAM_XDATA* dst, uint8_t size);
+static uint8_t write(uint8_t page, uint8_t version, uint8_t RAM_XDATA* src, uint8_t size);
 
 static bool read_config();
 static bool write_config();
@@ -100,25 +101,75 @@ static bool read_config()
 {
 	eventlog_write(EVT_MSG_CONFIG_READ_BEGIN);
 
-	uint8_t res = read(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t*)&g_config, sizeof(config_t));
+	uint8_t res = read(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
+    if (res == EEPROM_ERROR_VERSION)
+    {
+        res = read(EEPROM_CONFIG_PAGE, 7, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
+        if (res == EEPROM_OK)
+        {
+            // No old configuration may silently activate efficiency or comfort.
+            if (g_config.use_voltage_compensation > 1u) res = EEPROM_ERROR_CHECKSUM;
+            else
+            {
+                // v7 rejected Adaptive+Variable; do not reinterpret corrupt old flags.
+                for (uint8_t mode = 0; mode < 2; ++mode)
+                    for (uint8_t level = 0; level < 10; ++level)
+                        if ((g_config.assist_levels[mode][level].flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY)
+                            res = EEPROM_ERROR_CHECKSUM;
+                g_config.use_voltage_compensation |= CONTROLLER_EFFICIENCY_PROFILE;
+                if (res == EEPROM_OK) write_config();
+            }
+        }
+    }
+    if (res == EEPROM_ERROR_VERSION)
+    {
+        res = read(EEPROM_CONFIG_PAGE, 6, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
+        if (res == EEPROM_OK)
+        {
+            if (g_config.use_voltage_compensation > 1u) res = EEPROM_ERROR_CHECKSUM;
+            g_config.use_voltage_compensation = (g_config.use_voltage_compensation & 1u) | CONTROLLER_EFFICIENCY_PROFILE;
+            // The retired v6 bit must never silently select the new PAS variant.
+            for (uint8_t mode = 0; mode < 2; ++mode)
+                for (uint8_t level = 0; level < 10; ++level)
+                    g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
+            if (res == EEPROM_OK) write_config();
+        }
+    }
 	if (res == EEPROM_ERROR_VERSION)
 	{
-		res = read(EEPROM_CONFIG_PAGE, 5, (uint8_t*)&g_config, sizeof(config_t) - 2u);
+		res = read(EEPROM_CONFIG_PAGE, 5, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t) - 2u);
 		if (res == EEPROM_OK)
 		{
-			g_config.use_voltage_compensation = 0;
+			g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
 			g_config.current_ramp_smoothness_percent = 0;
 			for (uint8_t mode = 0; mode < 2; ++mode)
 				for (uint8_t level = 0; level < 10; ++level)
 				{
 					if (g_config.assist_levels[mode][level].flags & ASSIST_FLAG_VOLTAGE_COMPENSATION)
-						g_config.use_voltage_compensation = 1;
+						g_config.use_voltage_compensation |= SYSTEM_VOLTAGE_COMPENSATION;
 					g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
 				}
 			// Keep the migrated RAM configuration even if EEPROM persistence fails.
 			write_config();
 		}
 	}
+    if (res == EEPROM_OK)
+    {
+        uint8_t RAM_XDATA* cursor = (uint8_t RAM_XDATA*)&g_config + offsetof(config_t, assist_levels);
+        for (uint8_t index = 0; index < 20; ++index, cursor += sizeof(assist_level_t))
+        {
+            assist_level_t RAM_XDATA* level = (assist_level_t RAM_XDATA*)cursor;
+            if (level->flags & ASSIST_FLAG_PAS_ADAPTIVE)
+            {
+                uint8_t limit = config_power_budget_steps(&g_config, level);
+                if (level->torque_amplification_factor_x10 > limit)
+                    level->torque_amplification_factor_x10 = limit;
+                if (limit == 0)
+                    level->flags &= ~ASSIST_FLAG_PAS_ADAPTIVE;
+            }
+        }
+        if (!config_is_valid(&g_config)) res = EEPROM_ERROR_CHECKSUM;
+    }
 	switch (res)
 	{
 	default:
@@ -143,7 +194,7 @@ static bool write_config()
 {
 	eventlog_write(EVT_MSG_CONFIG_WRITE_BEGIN);
 
-	uint8_t res = write(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t*)&g_config, sizeof(config_t));
+	uint8_t res = write(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
 	switch (res)
 	{
 	default:
@@ -173,7 +224,7 @@ static void load_default_config()
 #endif
 
 	g_config.current_ramp_amps_s = 10;
-	g_config.use_voltage_compensation = 0;
+	g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
 	g_config.current_ramp_smoothness_percent = 0;
 	g_config.max_battery_x100v_u16l = (uint8_t)5460;
 	g_config.max_battery_x100v_u16h = (uint8_t)(5460 >> 8);
@@ -240,7 +291,7 @@ static bool read_pstate()
 {
 	eventlog_write(EVT_MSG_PSTATE_READ_BEGIN);
 
-	uint8_t res = read(EEPROM_PSTATE_PAGE, PSTATE_VERSION, (uint8_t*)&g_pstate, sizeof(pstate_t));
+	uint8_t res = read(EEPROM_PSTATE_PAGE, PSTATE_VERSION, (uint8_t RAM_XDATA*)&g_pstate, sizeof(pstate_t));
 	switch (res)
 	{
 	default:
@@ -265,7 +316,7 @@ static bool write_pstate()
 {
 	eventlog_write(EVT_MSG_PSTATE_WRITE_BEGIN);
 
-	uint8_t res = write(EEPROM_PSTATE_PAGE, PSTATE_VERSION, (uint8_t*)&g_pstate, sizeof(pstate_t));
+	uint8_t res = write(EEPROM_PSTATE_PAGE, PSTATE_VERSION, (uint8_t RAM_XDATA*)&g_pstate, sizeof(pstate_t));
 	switch (res)
 	{
 	default:
@@ -289,10 +340,10 @@ static void load_default_pstate()
 	g_pstate.adc_voltage_calibration_steps_x100_i16h = 0;
 }
 
-static uint8_t read(uint8_t page, uint8_t version, uint8_t* dst, uint8_t size)
+static uint8_t read(uint8_t page, uint8_t version, uint8_t RAM_XDATA* dst, uint8_t size)
 {
 	uint8_t read_offset = 0;
-	uint8_t* ptr = 0;
+	uint8_t RAM_XDATA* ptr = 0;
 	uint8_t i = 0;
 	int data;
 
@@ -301,7 +352,7 @@ static uint8_t read(uint8_t page, uint8_t version, uint8_t* dst, uint8_t size)
 		return EEPROM_ERROR_SELECT_PAGE;
 	}
 
-	ptr = (uint8_t*)&header;
+	ptr = (uint8_t RAM_XDATA*)&header;
 	for (i = 0; i < sizeof(header_t); ++i)
 	{
 		data = eeprom_read_byte(read_offset);
@@ -350,10 +401,10 @@ static uint8_t read(uint8_t page, uint8_t version, uint8_t* dst, uint8_t size)
 	return EEPROM_OK;
 }
 
-static uint8_t write(uint8_t page, uint8_t version, uint8_t* src, uint8_t size)
+static uint8_t write(uint8_t page, uint8_t version, uint8_t RAM_XDATA* src, uint8_t size)
 {
 	uint8_t write_offset = 0;
-	uint8_t* ptr = 0;
+	uint8_t RAM_XDATA* ptr = 0;
 	uint8_t i = 0;
 
 	header.version = version;
@@ -387,7 +438,7 @@ static uint8_t write(uint8_t page, uint8_t version, uint8_t* src, uint8_t size)
 	}
 
 	write_offset = 0;
-	ptr = (uint8_t*)&header;
+	ptr = (uint8_t RAM_XDATA*)&header;
 	for (i = 0; i < sizeof(header_t); ++i)
 	{
 		if (!eeprom_write_byte(write_offset, *ptr))

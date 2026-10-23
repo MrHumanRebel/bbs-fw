@@ -61,7 +61,7 @@ void main(void)
 		EXPAND_U16(g_config.throttle_end_voltage_mv_u16h, g_config.throttle_end_voltage_mv_u16l)
 	);
 
-	motor_init(g_config.max_current_amps * 1000, g_config.low_cut_off_v,
+	motor_init(g_config.max_current_amps * 1000u, g_config.low_cut_off_v,
 		EXPAND_I16(g_pstate.adc_voltage_calibration_steps_x100_i16h, g_pstate.adc_voltage_calibration_steps_x100_i16l));
 
 	lights_init();

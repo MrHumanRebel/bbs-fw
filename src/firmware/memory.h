@@ -7,10 +7,15 @@
 
 #if defined(__SDCC_mcs51)
 #define RAM_BOOL __bit
+// Only for pointers to objects known to live in external RAM, never stack/code/SFR data.
+#define RAM_XDATA __xdata
+#define RAM_DATA __data
 // Curve arithmetic uses the stack instead of scarce direct-RAM spill slots.
 #define RAM_REENTRANT __reentrant
 #else
 #define RAM_BOOL bool
+#define RAM_XDATA
+#define RAM_DATA
 #define RAM_REENTRANT
 #endif
 

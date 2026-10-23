@@ -1,0 +1,57 @@
+{
+  "created_date": "2026-10-22",
+  "package_name": "BBS Adaptive Efficiency - Final 3 target profiles",
+  "targets": [
+    "BBS02B",
+    "BBSHD",
+    "TSDZ2"
+  ],
+  "target_build_mapping": {
+    "BBS02B": "BBS02 build target ONLY for verified compatible UART/STC hardware",
+    "BBSHD": "BBSHD",
+    "TSDZ2": "TSDZ2"
+  },
+  "profile_files": {
+    "BBS02B": {
+      "file": "bbs02b_factory_reference_93points.csv",
+      "rows": 93,
+      "source_id": "BBS750_FACTORY",
+      "evidence": "93 point manufacturer test of unversioned BBS 48V/750W drive; user approved as BBS02B engineering proxy",
+      "independent_BBS02B_measurements": 0,
+      "measured_2D_map": false,
+      "hardware_revision_verified": false
+    },
+    "BBSHD": {
+      "file": "bbshd_factory_4_landmarks.csv",
+      "rows": 4,
+      "source_id": "BBSHD_FACTORY",
+      "evidence": "4 manufacturer annotated landmarks of BBSHD 48V/1000W load curve; not full 2D grid",
+      "measured_2D_map": false
+    },
+    "TSDZ2": {
+      "file": "tsdz2_external_bench_9points.csv",
+      "rows": 9,
+      "source_id": "TSDZ2B_BENCH",
+      "evidence": "9 shop trainer comparative measurements made on TSDZ2B (NOT TSDZ2); reference-only",
+      "direct_TSDZ2_dyno_map_available": false,
+      "measured_2D_map": false
+    }
+  },
+  "counts": {
+    "bbs02b_factory_reference_rows": 93,
+    "bbshd_factory_anchor_rows": 4,
+    "tsdz2_external_bench_rows": 9,
+    "motor_parameter_rows": 29,
+    "source_entries": 14,
+    "distinct_motor_profiles": 3
+  },
+  "evidence_limits": {
+    "full_2D_eta_map_available_for_any_target": false,
+    "BBS02B_factory_revision_positively_identified": false,
+    "TSDZ2_external_bench_matches_original_TSDZ2": false,
+    "power_savings_on_user_hardware_measured": false
+  },
+  "integration": "Use current working tree of MrHumanRebel/bbs-fw and PR #9 adaptive PAS where present; never infer BBS02B detection from filename.",
+  "safety": "No automatic safety current or thermal limit increases. Data are reference, not validated hardware-specific limit tables.",
+  "files_are_nonduplicated_profiles": true
+}

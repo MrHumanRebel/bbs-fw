@@ -83,6 +83,9 @@ internal static class Program
         vm.ConfigVm.PasKeepCurrentCadenceRpm = 40;
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
+        var adaptiveLevel = vm.ConfigVm.StandardAssistLevels[1];
+        adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptivePower);
+        adaptiveLevel.AdaptivePowerWatts = 250;
         var tabs = (TabControl)window.FindName("WorkspaceTabs");
         // Hosted Windows desktops cap top-level HWNDs near 1024x768. Exercise
         // the actual WPF content offscreen at exact logical viewport sizes.
@@ -146,8 +149,26 @@ internal static class Program
                             Check(actions.All(b => Bounds((FrameworkElement)b.Content, b).Width <= b.ActualWidth - b.Padding.Left - b.Padding.Right + 1),
                                 "quick action icons and labels fit inside buttons");
                         }
+                        if (index == 3)
+                        {
+                            var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "AdaptivePowerBudget");
+                            Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Power exposes a per-level watt budget");
+                            var warning = descendants.OfType<TextBlock>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveQuantizationWarning");
+                            adaptiveLevel.AdaptivePowerWatts = 10; Pump();
+                            Check(warning.Text.Contains("zero current") && warning.Text.Contains("throttle"), "Adaptive PAS shows quantization and throttle warnings");
+                            adaptiveLevel.AdaptivePowerWatts = 250;
+                            var preview = descendants.OfType<ResponseChart>().First(c => c.Mode == "Adaptive");
+                            Check(preview.BudgetPower == adaptiveLevel.AdaptivePowerWatts, "adaptive preview binds to the selected level budget");
+                            adaptiveLevel.AdaptivePowerWatts = 350; Pump();
+                            Check(preview.BudgetPower == 350, "adaptive watt edits update the native preview");
+                            adaptiveLevel.AdaptivePowerWatts = 250;
+                        }
                         if (index == 2)
                         {
+                            var profile = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "EfficiencyProfile");
+                            Check(profile.Items.Count == 3 && profile.Items.Cast<object>().Select(x => x.ToString()).SequenceEqual(new[] { "BBS02B", "BBSHD", "TSDZ2" }), "System exposes exactly three efficiency profiles");
+                            var comfort = descendants.OfType<CheckBox>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveComfort");
+                            Check(comfort.IsChecked == false, "optional Adaptive comfort defaults OFF");
                             var label = descendants.OfType<TextBlock>().First(t => t.Text == "Max Current (A):");
                             Check((label.Foreground as SolidColorBrush)?.Color == (app.FindResource("TextBrush") as SolidColorBrush)?.Color,
                                 $"form text uses the theme color: {label.Foreground} / {app.FindResource("TextBrush")}");

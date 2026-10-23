@@ -20,6 +20,7 @@ namespace BBSFW.View.Controls
         public static readonly DependencyProperty StartProperty = ValueProperty(nameof(Start), typeof(double), 1000d);
         public static readonly DependencyProperty EndProperty = ValueProperty(nameof(End), typeof(double), 4000d);
         public static readonly DependencyProperty KeepProperty = ValueProperty(nameof(Keep), typeof(uint), 60u);
+        public static readonly DependencyProperty BudgetPowerProperty = ValueProperty(nameof(BudgetPower), typeof(uint), 250u);
         public static readonly DependencyProperty CadenceProperty = ValueProperty(nameof(Cadence), typeof(uint), 40u);
         public string Mode { get => (string)GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
         public uint RampRate { get => (uint)GetValue(RampRateProperty); set => SetValue(RampRateProperty, value); }
@@ -29,6 +30,7 @@ namespace BBSFW.View.Controls
         public double End { get => (double)GetValue(EndProperty); set => SetValue(EndProperty, value); }
         public uint Keep { get => (uint)GetValue(KeepProperty); set => SetValue(KeepProperty, value); }
         public uint Cadence { get => (uint)GetValue(CadenceProperty); set => SetValue(CadenceProperty, value); }
+        public uint BudgetPower { get => (uint)GetValue(BudgetPowerProperty); set => SetValue(BudgetPowerProperty, value); }
         private bool draggingShape;
         private double dragTimeScale;
         private Rect Plot => new Rect(38, 22, Math.Max(1, ActualWidth - 54), Math.Max(1, ActualHeight - 56));
@@ -52,6 +54,7 @@ namespace BBSFW.View.Controls
         private double Evaluate(double x)
         {
             if (Mode == "Ramp") return ResponseMath.Ramp((int)Math.Min(1000, x / Math.Max(0.001, ResponseMath.RiseSeconds(MaxCurrent, RampRate)) * 1000), Smoothness) / 1000d;
+            if (Mode == "Adaptive") return BudgetPower == 0 ? 0 : ResponseMath.AdaptivePowerTenths((int)(x * 10), BudgetPower) / (BudgetPower * 10d);
             if (Mode == "Throttle") return End <= Start ? 0 : x < Start ? 0 : .01 + .99 * Math.Clamp((x - Start) / (End - Start), 0, 1);
             // Reference cadence uses a 100% cadence limit (150 rpm), as in app.c.
             return 1 - Math.Clamp((x - Cadence) / Math.Max(1, 150d - Cadence), 0, 1) * (1 - Keep / 100d);
@@ -73,7 +76,7 @@ namespace BBSFW.View.Controls
             {
                 double y = r.Bottom - r.Height * i / 4;
                 dc.DrawLine(grid, new Point(r.Left, y), new Point(r.Right, y));
-                Label(dc, $"{i * 25}%", new Point(0, y - 6), muted);
+                Label(dc, Mode == "Adaptive" ? $"{BudgetPower * i / 4}W" : $"{i * 25}%", new Point(0, y - 6), muted);
             }
             var geometry = new StreamGeometry();
             using (var context = geometry.Open())

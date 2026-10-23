@@ -12,6 +12,7 @@
 #include "intellisense.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "memory.h"
 
 #define ASSIST_FLAG_PAS					0x01
 #define ASSIST_FLAG_THROTTLE			0x02
@@ -21,6 +22,8 @@
 #define ASSIST_FLAG_OVERRIDE_CADENCE	0x20	// pas option where max cadence is set to 100% when throttle overrides pas
 #define ASSIST_FLAG_OVERRIDE_SPEED		0x40	// pas option where max speed is set to 100% when throttle overrides pas
 #define ASSIST_FLAG_VOLTAGE_COMPENSATION	0x80	// compensate PAS within assist current limit
+// Version 7 reuses the retired per-level voltage-compensation bit.
+#define ASSIST_FLAG_PAS_ADAPTIVE          0x80
 
 #define ASSIST_MODE_SELECT_OFF			0x00
 #define ASSIST_MODE_SELECT_STANDARD		0x01
@@ -55,7 +58,15 @@
 #define LIGHTS_MODE_ALWAYS_ON			2
 #define LIGHTS_MODE_BRAKE_LIGHT			3
 
-#define CONFIG_VERSION					6
+// Version 8 packs system options into the existing voltage-compensation byte.
+#define SYSTEM_VOLTAGE_COMPENSATION 0x01u
+#define SYSTEM_EFFICIENCY_PROFILE_MASK 0x06u
+#define SYSTEM_EFFICIENCY_COMFORT 0x08u
+#define EFFICIENCY_PROFILE_BBS02B 0u
+#define EFFICIENCY_PROFILE_BBSHD 2u
+#define EFFICIENCY_PROFILE_TSDZ2 4u
+#define ASSIST_FLAG_PAS_EFFICIENCY (ASSIST_FLAG_PAS_ADAPTIVE | ASSIST_FLAG_PAS_VARIABLE)
+#define CONFIG_VERSION                     8
 #define PSTATE_VERSION					1
 
 
@@ -68,6 +79,7 @@ typedef struct
 	uint8_t max_speed_percent;
 
 	// 10 => 1.0: 100w human power gives and additional 100w motor power
+    // Adaptive Power instead interprets this byte as its PAS budget in 10 W steps.
 	uint8_t torque_amplification_factor_x10;
 }  assist_level_t;
 
@@ -128,10 +140,14 @@ typedef struct
 	assist_level_t assist_levels[2][10];
 
 	// Version 6 extension; the version 5 prefix remains byte-for-byte compatible.
-	uint8_t use_voltage_compensation;
+	uint8_t use_voltage_compensation; // v8: packed SYSTEM_* options; bit 0 keeps its v6 meaning.
 	uint8_t current_ramp_smoothness_percent;
 
 } config_t;
+
+// Reusing a variant byte must not grow RAM, EEPROM pages or UART frames.
+typedef char config_wire_size_must_stay_156[(sizeof(config_t) == 156) ? 1 : -1];
+typedef char assist_wire_size_must_stay_6[(sizeof(assist_level_t) == 6) ? 1 : -1];
 
 typedef struct
 {
@@ -142,6 +158,10 @@ typedef struct
 
 extern config_t g_config;
 extern pstate_t g_pstate;
+
+// A power budget is encoded in 10 W steps and never exceeds the configured envelope.
+uint8_t config_power_budget_steps(const config_t RAM_XDATA* config, const assist_level_t RAM_XDATA* level) RAM_REENTRANT;
+bool config_is_valid(const config_t RAM_XDATA* config) RAM_REENTRANT;
 
 void cfgstore_init();
 
