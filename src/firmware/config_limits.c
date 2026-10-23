@@ -20,7 +20,8 @@ bool config_is_valid(const config_t RAM_XDATA* config) RAM_REENTRANT
     if ((uint16_t)(throttle_start - 200u) > 2300u || (uint16_t)(throttle_end - 2500u) > 2500u || throttle_start >= throttle_end ||
         config->speed_sensor_signals == 0 || config->speed_sensor_signals > 10u ||
         (uint8_t)(config->max_current_amps - 5u) > MAX_CONFIG_CURRENT_AMPS - 5u ||
-        config->current_ramp_amps_s == 0 || config->use_voltage_compensation > 1u ||
+        config->current_ramp_amps_s == 0 || (config->use_voltage_compensation & 0xf0u) ||
+        (config->use_voltage_compensation & SYSTEM_EFFICIENCY_PROFILE_MASK) > EFFICIENCY_PROFILE_TSDZ2 ||
         config->current_ramp_smoothness_percent > 100u || config->low_cut_off_v == 0 ||
         voltage > 10000u || voltage <= (uint16_t)config->low_cut_off_v * 100u + 100u ||
         (uint16_t)(wheel - 100u) > 300u || config->assist_startup_level > 9u ||
@@ -37,9 +38,12 @@ bool config_is_valid(const config_t RAM_XDATA* config) RAM_REENTRANT
             return false;
         if ((level->flags & ASSIST_FLAG_PAS_ADAPTIVE) &&
             (!(level->flags & ASSIST_FLAG_PAS) ||
-            (level->flags & (ASSIST_FLAG_PAS_TORQUE | ASSIST_FLAG_PAS_VARIABLE | ASSIST_FLAG_CRUISE)) ||
+            (level->flags & (ASSIST_FLAG_PAS_TORQUE | ASSIST_FLAG_CRUISE)) ||
             level->torque_amplification_factor_x10 == 0 ||
             level->torque_amplification_factor_x10 > config_power_budget_steps(config, level)))
+            return false;
+        if ((level->flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY &&
+            (config->use_voltage_compensation & SYSTEM_EFFICIENCY_PROFILE_MASK) != CONTROLLER_EFFICIENCY_PROFILE)
             return false;
     }
     return true;

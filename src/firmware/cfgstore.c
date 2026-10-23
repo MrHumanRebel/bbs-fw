@@ -104,14 +104,35 @@ static bool read_config()
 	uint8_t res = read(EEPROM_CONFIG_PAGE, CONFIG_VERSION, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
     if (res == EEPROM_ERROR_VERSION)
     {
+        res = read(EEPROM_CONFIG_PAGE, 7, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
+        if (res == EEPROM_OK)
+        {
+            // No old configuration may silently activate efficiency or comfort.
+            if (g_config.use_voltage_compensation > 1u) res = EEPROM_ERROR_CHECKSUM;
+            else
+            {
+                // v7 rejected Adaptive+Variable; do not reinterpret corrupt old flags.
+                for (uint8_t mode = 0; mode < 2; ++mode)
+                    for (uint8_t level = 0; level < 10; ++level)
+                        if ((g_config.assist_levels[mode][level].flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY)
+                            res = EEPROM_ERROR_CHECKSUM;
+                g_config.use_voltage_compensation |= CONTROLLER_EFFICIENCY_PROFILE;
+                if (res == EEPROM_OK) write_config();
+            }
+        }
+    }
+    if (res == EEPROM_ERROR_VERSION)
+    {
         res = read(EEPROM_CONFIG_PAGE, 6, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t));
         if (res == EEPROM_OK)
         {
+            if (g_config.use_voltage_compensation > 1u) res = EEPROM_ERROR_CHECKSUM;
+            g_config.use_voltage_compensation = (g_config.use_voltage_compensation & 1u) | CONTROLLER_EFFICIENCY_PROFILE;
             // The retired v6 bit must never silently select the new PAS variant.
             for (uint8_t mode = 0; mode < 2; ++mode)
                 for (uint8_t level = 0; level < 10; ++level)
                     g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
-            write_config();
+            if (res == EEPROM_OK) write_config();
         }
     }
 	if (res == EEPROM_ERROR_VERSION)
@@ -119,13 +140,13 @@ static bool read_config()
 		res = read(EEPROM_CONFIG_PAGE, 5, (uint8_t RAM_XDATA*)&g_config, sizeof(config_t) - 2u);
 		if (res == EEPROM_OK)
 		{
-			g_config.use_voltage_compensation = 0;
+			g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
 			g_config.current_ramp_smoothness_percent = 0;
 			for (uint8_t mode = 0; mode < 2; ++mode)
 				for (uint8_t level = 0; level < 10; ++level)
 				{
 					if (g_config.assist_levels[mode][level].flags & ASSIST_FLAG_VOLTAGE_COMPENSATION)
-						g_config.use_voltage_compensation = 1;
+						g_config.use_voltage_compensation |= SYSTEM_VOLTAGE_COMPENSATION;
 					g_config.assist_levels[mode][level].flags &= ~ASSIST_FLAG_VOLTAGE_COMPENSATION;
 				}
 			// Keep the migrated RAM configuration even if EEPROM persistence fails.
@@ -203,7 +224,7 @@ static void load_default_config()
 #endif
 
 	g_config.current_ramp_amps_s = 10;
-	g_config.use_voltage_compensation = 0;
+	g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
 	g_config.current_ramp_smoothness_percent = 0;
 	g_config.max_battery_x100v_u16l = (uint8_t)5460;
 	g_config.max_battery_x100v_u16h = (uint8_t)(5460 >> 8);

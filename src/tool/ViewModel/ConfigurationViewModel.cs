@@ -145,6 +145,24 @@ namespace BBSFW.ViewModel
 			}
 		}
 
+        public static Configuration.MotorEfficiencyProfile[] EfficiencyProfiles { get; } = Enum.GetValues<Configuration.MotorEfficiencyProfile>();
+        public Configuration.MotorEfficiencyProfile EfficiencyProfile
+        {
+            get => _config.EfficiencyProfile;
+            set { _config.EfficiencyProfile = value; OnPropertyChanged(nameof(EfficiencyProfile)); OnPropertyChanged(nameof(EfficiencyProfileDescription)); }
+        }
+        public bool AdaptiveComfort
+        {
+            get => _config.AdaptiveComfort;
+            set { _config.AdaptiveComfort = value; OnPropertyChanged(nameof(AdaptiveComfort)); }
+        }
+        public string EfficiencyProfileDescription => EfficiencyProfile switch
+        {
+            Configuration.MotorEfficiencyProfile.BBS02B => "Experimental: 93-point factory sweep, revision unverified; related-family parameters only. Verify BBS02B STC/UART compatibility before flashing. Low-cadence shaping floor: 90% of PAS demand.",
+            Configuration.MotorEfficiencyProfile.BBSHD => "Experimental: four factory landmarks and independent BBSHD sample parameters; no calibrated efficiency map. Low-cadence shaping floor: 95% of PAS demand.",
+            _ => "Experimental: TSDZ2 motor references; nine external TSDZ2B observations are not TSDZ2 calibration. Requires a working torque sensor. Low-cadence shaping floor: 90% of PAS demand."
+        };
+
         public bool UseVoltageCompensation
         {
             get => _config.UseVoltageCompensation;
@@ -212,6 +230,7 @@ namespace BBSFW.ViewModel
 					_config.MaxSpeedKph = value;
 					OnPropertyChanged(nameof(MaxSpeedKph));
 					OnPropertyChanged(nameof(MaxSpeedMph));
+                    RefreshPowerLimits(false);
 				}
 			}
 		}
@@ -226,6 +245,7 @@ namespace BBSFW.ViewModel
 					_config.MaxSpeedKph = MphToKph(value);
 					OnPropertyChanged(nameof(MaxSpeedKph));
 					OnPropertyChanged(nameof(MaxSpeedMph));
+                    RefreshPowerLimits(false);
 				}
 			}
 		}

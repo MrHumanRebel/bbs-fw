@@ -140,6 +140,17 @@ int main(int argc, char **argv)
                 }
             }
     }
+    else if (!strcmp(argv[1], "retarget_plateau"))
+    {
+        g_config.current_ramp_amps_s = 10;
+        g_config.current_ramp_smoothness_percent = 100;
+        uint8_t value = 0;
+        now = 0; test_ramp_up(&value, false);
+        for (now = 5; now <= 400; now += 5) { value = 20; test_ramp_up(&value, true); }
+        uint8_t previous = value;
+        for (now = 405; now <= 455; now += 5) { value = 100; test_ramp_up(&value, true); }
+        assert(value > previous); /* No approximately 250 ms freeze after a larger target. */
+    }
     else if (!strcmp(argv[1], "moving_ramp"))
     {
         g_config.current_ramp_amps_s = 10;
@@ -155,7 +166,10 @@ int main(int argc, char **argv)
             previous = value;
         }
         assert(value >= 9); /* A changing target cannot restart the curve forever. */
-        now += 2500; value = 100; test_ramp_up(&value, true); assert(value == 100);
+        now += 2500; value = 100; test_ramp_up(&value, true);
+        assert(value <= previous + 2); /* A scheduling pause cannot become an upward spike. */
+        for (unsigned step = 0; step < 700; ++step) { now += 5; value = 100; test_ramp_up(&value, true); }
+        assert(value == 100);
         value = 0; test_ramp_up(&value, true); assert(value == 0);
         for (unsigned step = 0; step < 200; ++step)
         {
@@ -166,12 +180,14 @@ int main(int argc, char **argv)
         assert(value >= 19); /* Alternating targets above output must not restart the curve either. */
         value = 0; test_ramp_up(&value, false);
         now += 5; value = 100; test_ramp_up(&value, true);
-        now += 2500; value = 20; test_ramp_up(&value, true); assert(value == 20);
+        now += 2500; value = 20; test_ramp_up(&value, true); assert(value <= 2);
+        for (unsigned step = 0; step < 300; ++step) { now += 5; value = 20; test_ramp_up(&value, true); }
+        assert(value == 20);
         motor_current = 20;
         g_config.assist_levels[0][2] = g_config.assist_levels[0][1];
         app_set_assist_level(2);
         now += 5; value = 100; test_ramp_up(&value, true);
-        assert(value == 20); /* A level change cannot expose a hidden, already-finished envelope. */
+        assert(value <= 21); /* A level change cannot expose a hidden, already-finished envelope. */
     }
     else if (!strcmp(argv[1], "walk"))
     {

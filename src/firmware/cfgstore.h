@@ -58,7 +58,15 @@
 #define LIGHTS_MODE_ALWAYS_ON			2
 #define LIGHTS_MODE_BRAKE_LIGHT			3
 
-#define CONFIG_VERSION					7
+// Version 8 packs system options into the existing voltage-compensation byte.
+#define SYSTEM_VOLTAGE_COMPENSATION 0x01u
+#define SYSTEM_EFFICIENCY_PROFILE_MASK 0x06u
+#define SYSTEM_EFFICIENCY_COMFORT 0x08u
+#define EFFICIENCY_PROFILE_BBS02B 0u
+#define EFFICIENCY_PROFILE_BBSHD 2u
+#define EFFICIENCY_PROFILE_TSDZ2 4u
+#define ASSIST_FLAG_PAS_EFFICIENCY (ASSIST_FLAG_PAS_ADAPTIVE | ASSIST_FLAG_PAS_VARIABLE)
+#define CONFIG_VERSION                     8
 #define PSTATE_VERSION					1
 
 
@@ -132,7 +140,7 @@ typedef struct
 	assist_level_t assist_levels[2][10];
 
 	// Version 6 extension; the version 5 prefix remains byte-for-byte compatible.
-	uint8_t use_voltage_compensation;
+	uint8_t use_voltage_compensation; // v8: packed SYSTEM_* options; bit 0 keeps its v6 meaning.
 	uint8_t current_ramp_smoothness_percent;
 
 } config_t;

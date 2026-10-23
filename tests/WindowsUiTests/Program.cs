@@ -153,6 +153,10 @@ internal static class Program
                         {
                             var budget = descendants.OfType<TextBox>().First(b => AutomationProperties.GetAutomationId(b) == "AdaptivePowerBudget");
                             Check(budget.IsVisible || budget.Visibility == Visibility.Visible, "Adaptive Power exposes a per-level watt budget");
+                            var warning = descendants.OfType<TextBlock>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveQuantizationWarning");
+                            adaptiveLevel.AdaptivePowerWatts = 10; Pump();
+                            Check(warning.Text.Contains("zero current") && warning.Text.Contains("throttle"), "Adaptive PAS shows quantization and throttle warnings");
+                            adaptiveLevel.AdaptivePowerWatts = 250;
                             var preview = descendants.OfType<ResponseChart>().First(c => c.Mode == "Adaptive");
                             Check(preview.BudgetPower == adaptiveLevel.AdaptivePowerWatts, "adaptive preview binds to the selected level budget");
                             adaptiveLevel.AdaptivePowerWatts = 350; Pump();
@@ -161,6 +165,10 @@ internal static class Program
                         }
                         if (index == 2)
                         {
+                            var profile = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "EfficiencyProfile");
+                            Check(profile.Items.Count == 3 && profile.Items.Cast<object>().Select(x => x.ToString()).SequenceEqual(new[] { "BBS02B", "BBSHD", "TSDZ2" }), "System exposes exactly three efficiency profiles");
+                            var comfort = descendants.OfType<CheckBox>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveComfort");
+                            Check(comfort.IsChecked == false, "optional Adaptive comfort defaults OFF");
                             var label = descendants.OfType<TextBlock>().First(t => t.Text == "Max Current (A):");
                             Check((label.Foreground as SolidColorBrush)?.Color == (app.FindResource("TextBrush") as SolidColorBrush)?.Color,
                                 $"form text uses the theme color: {label.Foreground} / {app.FindResource("TextBrush")}");

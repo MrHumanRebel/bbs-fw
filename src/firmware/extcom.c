@@ -31,7 +31,7 @@
 
 // Largest supported request is WRITE_CONFIG: header + payload + checksum.
 #define BUFFER_SIZE (sizeof(config_t) + 5u)
-#if CONFIG_VERSION != 7
+#if CONFIG_VERSION != 8
 #error Review maximum protocol request size when changing the configuration schema.
 #endif
 #define DISCARD_TIMEOUT_MS	50

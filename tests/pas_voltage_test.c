@@ -16,6 +16,7 @@ static uint16_t motor_faults;
 static bool motor_enabled;
 static bool pedaling = true, backwards, brake, shift;
 static int16_t temperature;
+static bool torque_valid = true;
 uint32_t system_ms(void) { return now; }
 uint16_t motor_get_battery_voltage_x10(void) { return voltage; }
 uint8_t motor_get_target_current(void) { return motor_current; }
@@ -37,7 +38,7 @@ uint16_t pas_get_cadence_rpm_x10(void) { return pedal_cadence; }
 uint16_t speed_sensor_get_rpm_x10(void) { return wheel_speed; }
 bool speed_sensor_is_moving(void) { return wheel_speed > 0; }
 uint16_t torque_sensor_get_nm_x100(void) { return 1000; }
-bool torque_sensor_ok(void) { return true; }
+bool torque_sensor_ok(void) { return torque_valid; }
 bool brake_is_activated(void) { return brake; }
 bool shift_sensor_is_activated(void) { return shift; }
 int16_t temperature_contr_x100(void) { return temperature; }

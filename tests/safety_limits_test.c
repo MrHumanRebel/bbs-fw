@@ -8,10 +8,16 @@ int main(int argc, char **argv)
     assert(argc == 3);
     setup();
     g_config.use_voltage_compensation = 0;
-    if (!strcmp(argv[2], "adaptive") || !strcmp(argv[2], "adaptive_pas"))
+    if (!strcmp(argv[2], "adaptive") || !strcmp(argv[2], "adaptive_pas") || !strncmp(argv[2], "efficiency", 10))
     {
         g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_ADAPTIVE;
         g_config.assist_levels[0][1].torque_amplification_factor_x10 = 25;
+        if (!strncmp(argv[2], "efficiency", 10))
+        {
+            g_config.assist_levels[0][1].flags |= ASSIST_FLAG_PAS_VARIABLE;
+            g_config.use_voltage_compensation = CONTROLLER_EFFICIENCY_PROFILE;
+            if (!strcmp(argv[2], "efficiency_comfort")) g_config.use_voltage_compensation |= SYSTEM_EFFICIENCY_COMFORT;
+        }
         throttle = !strcmp(argv[2], "adaptive") ? 100 : 0; /* Test PAS and its throttle override separately. */
     }
     else if (!strcmp(argv[2], "throttle"))

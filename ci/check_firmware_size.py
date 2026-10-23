@@ -1,4 +1,4 @@
-"""Keep firmware within its pre-hardening footprint using the pinned SDCC toolchain.
+"""Guard the reviewed Adaptive Efficiency flash allowance and zero-RAM-growth baseline.
 
 These are regression budgets, not MCU ratings or measured peak-stack bounds.
 """
@@ -13,9 +13,9 @@ except ImportError:  # Direct script execution.
     from validate_release import validate_hex
 
 BUDGETS = {
-    "BBS02": {"flash": 25805, "xram": 904, "stack_available": 150},
-    "BBSHD": {"flash": 27361, "xram": 918, "stack_available": 138},
-    "TSDZ2": {"code": 15655, "data": 587, "initialized": 61, "image_span": 16396},
+    "BBS02": {"flash": 28064, "xram": 861, "stack_available": 156},
+    "BBSHD": {"flash": 29648, "xram": 875, "stack_available": 144},
+    "TSDZ2": {"code": 16000, "data": 581, "initialized": 61, "image_span": 16736},
 }
 
 

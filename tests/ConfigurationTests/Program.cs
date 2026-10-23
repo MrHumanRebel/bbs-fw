@@ -35,6 +35,7 @@ class Program
     {
         await ControllerOperationTests.Run(Check);
         AdaptivePowerTests.Run(Check);
+        EfficiencyTests.Run(Check);
         byte[] telemetry = {1,4,1,1,224,1,4,3,232,1,24,1,1,0,0};
         telemetry[14] = (byte)telemetry.Take(14).Sum(x => x);
         var live = VirtualTelemetry.Decode(telemetry);
@@ -64,7 +65,7 @@ class Program
         cfg.StandardAssistLevels[1].Type = Configuration.AssistFlagsType.Pas | Configuration.AssistFlagsType.Throttle;
         cfg.MaxBatteryVolts = 58.8f;
         var original = cfg.WriteToBuffer();
-        Check(original.Length == 156 && Configuration.CurrentVersion == 7, "v7 retains the 156-byte payload and existing global controls");
+        Check(original.Length == 156 && Configuration.CurrentVersion == 8, "v8 retains the 156-byte payload and existing global controls");
         Check(!cfg.UseVoltageCompensation && cfg.CurrentRampSmoothnessPercent == 0, "new controls default to compensation off and linear ramp");
         cfg.UseVoltageCompensation = true;
         cfg.CurrentRampSmoothnessPercent = 75;

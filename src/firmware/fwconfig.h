@@ -8,6 +8,21 @@
 #ifndef _FWCONFIG_H_
 #define _FWCONFIG_H_
 
+// Exactly three optimization profiles; these are not hardware revision detection.
+#if defined(BBS02)
+#define CONTROLLER_EFFICIENCY_PROFILE 0u
+#define EFFICIENCY_LOW_CADENCE_X10 350u
+#define EFFICIENCY_MIN_SCALE 90u
+#elif defined(BBSHD)
+#define CONTROLLER_EFFICIENCY_PROFILE 2u
+#define EFFICIENCY_LOW_CADENCE_X10 400u
+#define EFFICIENCY_MIN_SCALE 95u
+#else
+#define CONTROLLER_EFFICIENCY_PROFILE 4u
+#define EFFICIENCY_LOW_CADENCE_X10 450u
+#define EFFICIENCY_MIN_SCALE 90u
+#endif
+
 // Existing configuration-tool ceilings; the configured current may be lower.
 #if defined(BBSHD)
 #define MAX_CONFIG_CURRENT_AMPS 33u

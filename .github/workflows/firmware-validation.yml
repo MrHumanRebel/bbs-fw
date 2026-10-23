@@ -6,6 +6,7 @@ on:
       - src/firmware/**
       - tests/**
       - ci/**
+      - research/efficiency/**
       - .github/workflows/firmware-validation.yml
   workflow_dispatch:
 permissions:
@@ -44,7 +45,9 @@ jobs:
       - name: Compare shipped arithmetic against legacy formulas
         env:
           CONTROLLER: ${{ matrix.controller }}
-        run: python3 tests/run_target_conversion.py --controller "$CONTROLLER"
+        run: |
+          python3 tests/run_target_conversion.py --controller "$CONTROLLER"
+          python3 tests/run_target_control.py --controller "$CONTROLLER"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: firmware-validation-${{ matrix.controller }}

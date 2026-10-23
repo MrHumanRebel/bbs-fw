@@ -36,8 +36,19 @@
             </Border>
             <Border Style="{StaticResource Card}" Background="{DynamicResource InputBrush}" Padding="16">
                 <StackPanel>
+                    <TextBlock Text="Adaptive Efficiency" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="Motor profile" Style="{StaticResource Caption}" Margin="0,10,0,4"/>
+                    <ComboBox ItemsSource="{Binding ConfigVm.EfficiencyProfiles}" SelectedItem="{Binding ConfigVm.EfficiencyProfile}" AutomationProperties.AutomationId="EfficiencyProfile"/>
+                    <TextBlock Text="{Binding ConfigVm.EfficiencyProfileDescription}" TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
+                    <TextBlock Text="Enable explicitly by selecting Adaptive Efficiency on the desired PAS levels. Existing PAS levels remain unchanged. No measured range gain is established." TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,10,0,0"/>
+                    <CheckBox IsChecked="{Binding ConfigVm.AdaptiveComfort}" Margin="0,14,0,0" AutomationProperties.AutomationId="AdaptiveComfort"><TextBlock Text="Comfort deceleration for Adaptive PAS" TextWrapping="Wrap"/></CheckBox>
+                    <TextBlock Text="Only while pedaling. Watt/current ceilings, braking and all safety cutoffs take priority." TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Background="{DynamicResource InputBrush}" Padding="16">
+                <StackPanel>
                     <TextBlock Text="Current response" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                    <TextBlock Text="Drag the curve handles or fine-tune the values." Style="{StaticResource Caption}" Margin="0,6,0,8" TextWrapping="Wrap"/>
+                    <TextBlock Text="Drag the curve handles or fine-tune the values. The plot shows legacy PAS; Adaptive variants use bounded target tracking with the same rate and smoothness settings." Style="{StaticResource Caption}" Margin="0,6,0,8" TextWrapping="Wrap"/>
                     <controls:ResponseChart RampRate="{Binding ConfigVm.CurrentRampAmpsSecond, Mode=TwoWay}" Smoothness="{Binding ConfigVm.CurrentRampSmoothnessPercent, Mode=TwoWay}" MaxCurrent="{Binding ConfigVm.MaxCurrentAmps}" AutomationProperties.Name="Editable current rise curve"/>
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>

@@ -28,7 +28,7 @@ for target in BBS02 BBSHD TSDZ2; do
         -I src/firmware tests/safety_limits_test.c -o "$test_dir/safety"
     "$test_dir/safety" thermal_curve legacy
     "$test_dir/safety" zero_pas legacy
-    for mode in legacy adaptive adaptive_pas variable cruise throttle walk; do
+    for mode in legacy adaptive adaptive_pas efficiency efficiency_comfort variable cruise throttle walk; do
         for scenario in thermal cutoff invalid_voltage fault keep_range lvc_wrap unknown_status; do "$test_dir/safety" "$scenario" "$mode"; done
     done
     if [ "$target" = TSDZ2 ]; then
@@ -47,10 +47,15 @@ for target in BBS02 BBSHD TSDZ2; do
     fi
     cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
         -I src/firmware tests/adaptive_power_test.c -o "$test_dir/adaptive"
-    for scenario in budget voltage coast compensation throttle profiles legacy_ramp moving_ramp walk brake speed thermal lvc; do
+    for scenario in budget voltage coast compensation throttle profiles legacy_ramp retarget_plateau moving_ramp walk brake speed thermal lvc; do
         "$test_dir/adaptive" "$scenario"
     done
     if [ "$target" != TSDZ2 ]; then "$test_dir/adaptive" shift; fi
+    cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
+        -I src/firmware tests/efficiency_test.c -o "$test_dir/efficiency"
+    for scenario in load_hysteresis speed_target sensors comfort clock_mode slew; do
+        "$test_dir/efficiency" "$scenario"
+    done
 	if [ "$target" = TSDZ2 ]; then
 		"$test_dir/voltage" torque
 	else

@@ -42,7 +42,7 @@ The reviewed snapshot is checked against the **actual connected controller**.
 ## Protection reductions have priority
 
 Every normal demand source passes through the same final protections: cadence
-PAS, variable PAS, torque PAS where supported, Adaptive Power, cruise, physical
+PAS, variable PAS, torque PAS where supported, Adaptive Power, Adaptive Efficiency, cruise, physical
 or virtual throttle, and walk assist.
 
 - An active thermal, LVC, speed or shift envelope prevents the normal falling-current
@@ -85,7 +85,7 @@ are rejected before changing live configuration. Invalid EEPROM settings follow
 the existing factory-default recovery path. An otherwise valid old schema-7
 Adaptive Power budget above its ceiling is reduced in RAM without discarding
 other settings; zero available headroom clears its adaptive flag. A subsequent
-save persists those corrected values. Schema-5/6 migration remains supported.
+save persists those corrected values. Schema-5/6/7 migration remains supported; none activates experimental efficiency or comfort.
 
 Configuration stays **156 bytes**, each assist level **6 bytes**, and the maximum
 UART request **161 bytes**. No new configuration fields or per-level arrays are
@@ -120,14 +120,46 @@ Power implementation (`f116eab`) with this hardening/optimization patch. The tab
 reports firmware flash/CODE, not Intel HEX text-file size. Linker stack capacity
 and STM8 SSEG reservation are not measurements of peak runtime stack use.
 
-`ci/check_firmware_size.py` rejects flash/static-RAM growth or reduced 8051 stack
-capacity beyond the preceding implementation's budgets. The STM8 check includes
+`ci/check_firmware_size.py` now enforces the pre-efficiency static-RAM and 8051
+stack-capacity baseline exactly, with a separately reviewed allowance for the
+new control code in flash. The STM8 check includes
 the complete HEX address span so vectors, startup code and constant tables cannot
 escape a check of the CODE section alone. These regression budgets
 are deliberately distinct from MCU ratings. PR CI builds all three controllers,
 runs host regressions, and executes the extracted shipping conversion using
 SDCC/uCsim; release builds also enforce the size budgets. No global compiler
 optimization or unsafe-memory-read flags are enabled.
+
+## Adaptive Efficiency: zero additional static RAM
+
+The comparison below uses the current pre-feature baseline `4a50c09`, clean
+SDCC 4.5.0 builds and the same target settings. The research datasets and all
+measurement probes stay offline. The existing five-byte PAS cache and seven-byte
+ramp state are reused as unions; compile-time size checks and CI memory budgets
+prevent static-RAM growth.
+
+| Build target / selectable profile | Flash before / after / delta | Static RAM before / after | Linker stack before / after |
+| --- | --- | --- | --- |
+| BBS02 / BBS02B | 25,772 / 27,913 / +2,141 bytes | XRAM 861 / 861 bytes | 156 / 156 bytes available |
+| BBSHD / BBSHD | 27,328 / 29,485 / +2,157 bytes | XRAM 875 / 875 bytes | 144 / 144 bytes available |
+| TSDZ2 / TSDZ2 | Full image 15,464 / 16,669 / +1,205 bytes; CODE 14,733 / 15,938 | DATA 581 / 581; INITIALIZED 61 / 61 bytes | SSEG reservation 1 / 1 byte |
+
+Flash increases to implement the new control policy, fixed-point target tracker,
+comfort ceiling and schema validation/migration. Configuration remains 156 bytes;
+no EEPROM field, request byte, telemetry field, event, buffer, runtime statistic
+or background task is added. The Adaptive tracker uses only bounded 16-bit
+arithmetic and runs at most one tracking step per 20 ms from the existing
+application call. Profile decisions change at most once per 100 ms there.
+
+`tests/run_target_control.py` compiles the production application with mock I/O
+and checks every smoothness setting, changing targets, clock wrap, profile
+shaping and immediate safety stops on each MCU instruction set. Its optional
+`--baseline-ref 4a50c09` repeats the same probe against the old implementation.
+Stack watermarks and simulator-cycle counts describe that finite probe only,
+with no interrupts or real peripheral I/O. They do not certify the hardware's
+peak stack requirement or the 5 ms application deadline. STM8 simulation sets
+SP to the S105's actual 0x07ff RAM top and keeps overflow checking enabled with
+a conservative 0x03ff lower boundary.
 
 ## Verification limits
 

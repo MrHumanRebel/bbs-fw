@@ -179,5 +179,12 @@
 			</TextBox.Style>
 		</TextBox>
 
+        <StackPanel Grid.Row="8" Grid.ColumnSpan="2" Margin="0,16,0,0">
+            <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers><DataTrigger Binding="{Binding IsPasAssistAdaptiveVariant}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+            </Style></StackPanel.Style>
+            <TextBlock Text="{Binding AdaptiveQuantizationWarning}" TextWrapping="Wrap" Style="{StaticResource Caption}" AutomationProperties.AutomationId="AdaptiveQuantizationWarning"/>
+            <TextBlock Text="{Binding AdaptiveSpeedText}" TextWrapping="Wrap" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
+        </StackPanel>
 		</Grid>
 </UserControl>

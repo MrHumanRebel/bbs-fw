@@ -112,6 +112,13 @@ int main(void)
     rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
     assert(config_saves == 3 && tx_count == 4 && tx[2] == 1);
     assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
+    now += DISCARD_TIMEOUT_MS + 1u;
+    rx[4 + 34 + 6] = ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY;
+    rx[4 + 154] = CONTROLLER_EFFICIENCY_PROFILE | SYSTEM_EFFICIENCY_COMFORT;
+    rx[160] = compute_checksum(rx, 160);
+    rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
+    assert(config_saves == 4 && tx_count == 4 && tx[2] == 1);
+    assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY));
     for (unsigned invalid = 0; invalid < 3; ++invalid)
     {
         rx[2] = invalid == 2 ? 6 : CONFIG_VERSION;
@@ -119,11 +126,11 @@ int main(void)
         rx[4 + 34 + 6 + 5] = invalid == 0 ? 0 : 25;
         rx[160] = compute_checksum(rx, 160);
         rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
-        assert(config_saves == 3 && tx_count == 4 && tx[2] == 0);
-        assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_ADAPTIVE));
+        assert(config_saves == 4 && tx_count == 4 && tx[2] == 0);
+        assert(g_config.assist_levels[0][1].flags == (ASSIST_FLAG_PAS | ASSIST_FLAG_PAS_EFFICIENCY));
         assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
     }
-    puts("v7 adaptive write, invalid budget/variant and old-version write rejection: PASS");
+    puts("v8 Adaptive/Efficiency writes, invalid budget/variant and old-version write rejection: PASS");
     for (unsigned invalid = 0; invalid < 3; ++invalid)
     {
         memcpy(rx + 4, &g_config, sizeof g_config);
@@ -133,7 +140,7 @@ int main(void)
         if (invalid == 2) rx[4 + 34 + 6 + 1] = 101;
         rx[160] = compute_checksum(rx, 160);
         rx_pos = 0; rx_len = 161; tx_count = 0; extcom_process();
-        assert(config_saves == 3 && tx_count == 4 && tx[2] == 0);
+        assert(config_saves == 4 && tx_count == 4 && tx[2] == 0);
         assert(g_config.max_current_amps == MAX_CONFIG_CURRENT_AMPS);
         assert(g_config.assist_levels[0][1].torque_amplification_factor_x10 == 25);
     }

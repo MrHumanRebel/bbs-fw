@@ -50,42 +50,77 @@ independent level ceilings. Throttle remains optional, uses its own existing
 current mapping and can override the PAS budget. Walk assist retains its normal
 behavior and release interlock.
 
-For Adaptive Power, moving targets preserve the rising curve's time origin
-so repeated cadence samples cannot continuously restart its flat beginning.
-Falling targets and safety reductions are bounded immediately: the ordinary
-ramp-down cannot raise the new lower PAS request. Level/mode reloads involving Adaptive Power reset any hidden envelope to the
-last commanded current. Other variants retain the old ramp behavior. This is not a predictive or fully jerk-limited trajectory planner.
+For Adaptive Power and Adaptive Efficiency, rising targets use a fixed-point
+position/velocity tracker that retains velocity across target changes. It advances
+at most one bounded 20 ms step per application call; delayed processing cannot
+produce a catch-up surge. Smoothness controls acceleration and the final approach.
+This removes the reproduced 20% to 100% target plateau at 405 ms. Falling targets
+and safety reductions remain immediate by default. The optional System comfort
+setting gradually reduces positive pedaling demand, always bounded by the updated
+full-budget current ceiling; coasting and all protection envelopes bypass it.
+Level/mode changes reset the correct shared ramp state. Other PAS variants retain
+the previous segmented ramp byte-for-byte across all 101 smoothness settings.
+
+## Adaptive Efficiency: explicit experimental variant
+
+Select **System → Motor profile: BBS02B, BBSHD or TSDZ2**, then choose
+**PAS → Adaptive Efficiency (experimental)** on each desired level. This does not
+activate a global ECO mode or alter other levels. New/default and migrated
+configurations never enable the variant or comfort automatically. An enabled
+profile must match the actual connected controller; BBS02B additionally requires
+verified compatible STC/UART hardware, which profile selection cannot detect.
+
+The base watt budget, cadence envelope and all current/speed/protection ceilings
+remain. After a three-second launch grace, a small bounded current trim responds
+to low cadence and sustained requested load, with hysteresis. It acts only above
+75% of the configured speed ceiling; near 97% it also trims demand regardless of
+cadence, recovering below 93% when low-cadence derating is inactive. BBS02B and
+TSDZ2 retain at least 90% of the base request; BBSHD retains at least 95%. Coarse
+current reductions round down rather than erasing a positive one-percent command.
+Low-speed hill starts retain the base budget. Missing configured wheel speed
+falls back to unshaped Adaptive Power; invalid cadence, voltage or the existing
+TSDZ2 torque-sensor fault indication produces zero experimental PAS demand.
+
+A global 100 km/h limit and a 20% level limit give the existing 20 km/h safety
+ceiling, including its original soft approach. The trim manages demand around
+that ceiling; it is not a new cruise-speed guarantee or a measured motor-efficiency
+optimum. Slope, gearing, human power and motor output torque remain unobserved.
+The supplied datasets support test hypotheses, not transferable real-time maps.
+See the [engineering decision](decisions/adaptive-efficiency.md) for profile
+thresholds, evidence quality, memory reuse and validation limits.
+
+No logging, telemetry, diagnostics, measurement buffers, history, runtime
+statistics, extra scheduled tasks or EEPROM fields are added. The existing
+logging infrastructure remains unchanged. All research analysis and simulation
+instrumentation run offline.
 
 ## Storage and compatibility
 
-Configuration schema **7** retains the **156-byte** payload, **6-byte** assist
-level and **161-byte** maximum protocol frame. Compile-time checks reject
-accidental structure growth.
+Configuration schema **8** retains the **156-byte** payload, **6-byte** assist
+level and **161-byte** maximum request. Native compile-time checks enforce the
+configuration, five-byte PAS cache and seven-byte maximum shared ramp state.
 
-- Flag `0x80`, retired from per-level voltage compensation in schema 6, identifies
-  Adaptive Power in schema 7.
-- The existing `torque_amplification_factor_x10` byte stores the Adaptive Power
-  budget in 10 W steps. For Torque PAS it keeps its original meaning.
-- No per-level arrays, lookup table, heap allocation or new periodic task are
-  added. Arithmetic uses bounded integers. A restart stop latch protects
-  configuration changes.
-- EEPROM schema 6 migrates to 7 without changing existing global controls or
-  selecting Adaptive Power. The old retired bit is cleared.
-- Schema 5 migration still converts per-level voltage compensation to the global
-  toggle. It cannot select Adaptive Power.
-- Old XML `VoltageCompensation` flag names migrate to the global toggle. New XML
-  uses the distinct `PasAdaptive` name. Invalid adaptive combinations and budgets
-  outside the encoded 10 W steps are rejected.
-- Configuration writes require schema 7 and reject mixed adaptive/torque,
-  adaptive/variable or adaptive/cruise flags and zero budgets before changing
-  configuration RAM. They also validate the controller-specific current ceiling
-  and power envelope. A valid write/reset stops the motor until restart. The
-  Windows tool still reads older supported schemas, but
-  writes only to matching firmware. Existing write confirmations remain mandatory.
+- Flag `0x80` keeps its schema-7 Adaptive Power meaning. In schema 8,
+  `0x80 | 0x08` selects Adaptive Efficiency; the combination was invalid in v7.
+- The existing `torque_amplification_factor_x10` byte still stores Adaptive
+  budgets in 10 W steps and retains its original Torque PAS meaning.
+- Existing byte 154 packs voltage compensation in bit 0, the three profile
+  choices in bits 1–2, and comfort in bit 3. Reserved profile/option bits are
+  rejected. No EEPROM layout or frame grows.
+- v7 migration preserves genuine Adaptive Power and rejects its previously
+  invalid combined variant. v6 clears the retired per-level compensation bit;
+  v5 also migrates compensation to the global setting. None activates efficiency
+  or comfort. The compiled profile is only a selection default.
+- Old XML `VoltageCompensation` names still migrate to the global control. New
+  XML retains the explicitly selected variant, profile and comfort option.
+- Writes require matching schema 8 and reject mixed adaptive/torque or
+  adaptive/cruise flags, zero/excessive budgets and incompatible efficiency
+  profiles before changing live RAM. A valid write/reset stops the motor until
+  restart. Every controller write still requires the default-No confirmation.
 
 Use matching firmware and tool releases. Back up settings before upgrading.
-Downgrading to schema-6 firmware does not preserve schema-7 EEPROM settings;
-restore a suitable backup rather than treating the bit as an old option.
+Downgrading to older firmware does not preserve schema-8 EEPROM settings; restore
+a suitable backup rather than reinterpreting the packed options or variant bits.
 
 ## Firmware memory and safety verification
 

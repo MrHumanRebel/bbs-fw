@@ -12,7 +12,7 @@ namespace BBSFW.Model
 	[XmlRoot("BBSFW", Namespace ="https://github.com/danielnilsson9/bbs-fw")]
 	public class Configuration
 	{
-		public const int CurrentVersion = 7;
+		public const int CurrentVersion = 8;
 		public const int MinVersion = 1;
 		public const int MaxVersion = CurrentVersion;
 
@@ -23,6 +23,7 @@ namespace BBSFW.Model
 		public const int ByteSizeV5 = 154;
         public const int ByteSizeV6 = 156;
         public const int ByteSizeV7 = ByteSizeV6;
+        public const int ByteSizeV8 = ByteSizeV7;
         public const byte LegacyVoltageCompensationFlag = 0x80;
 
 		public enum Feature
@@ -49,6 +50,7 @@ namespace BBSFW.Model
 					return ByteSizeV5;
                 case 6: return ByteSizeV6;
                 case 7: return ByteSizeV7;
+                case 8: return ByteSizeV8;
 			}
 
 			return 0;
@@ -181,7 +183,16 @@ namespace BBSFW.Model
             };
             ValidateLimits(MaxCurrentAmps, 5, limit, "Connected controller Max Current (A)");
             Validate();
+            if (StandardAssistLevels.Concat(SportAssistLevels).Any(IsEfficiencyLevel))
+            {
+                var required = controller == BbsfwConnection.Controller.BBS02 ? MotorEfficiencyProfile.BBS02B :
+                    controller == BbsfwConnection.Controller.BBSHD ? MotorEfficiencyProfile.BBSHD : MotorEfficiencyProfile.TSDZ2;
+                if (EfficiencyProfile != required) throw new Exception("Efficiency profile must match the connected controller. BBS02B additionally requires verified compatible STC/UART hardware.");
+            }
         }
+
+        public static bool IsEfficiencyLevel(AssistLevel level) =>
+            level.Type.HasFlag(AssistFlagsType.PasAdaptive | AssistFlagsType.PasVariable);
 
 		// hmi
 		[XmlIgnore]
@@ -191,6 +202,9 @@ namespace BBSFW.Model
 		public uint MaxCurrentAmps;
 		public uint CurrentRampAmpsSecond;
         public bool UseVoltageCompensation;
+        public enum MotorEfficiencyProfile { BBS02B, BBSHD, TSDZ2 }
+        public MotorEfficiencyProfile EfficiencyProfile;
+        public bool AdaptiveComfort;
         public uint CurrentRampSmoothnessPercent;
 		public float MaxBatteryVolts;
 		public uint LowCutoffVolts;
@@ -243,7 +257,9 @@ namespace BBSFW.Model
 
 		public Configuration(BbsfwConnection.Controller target)
 		{
-			Target = target;
+            Target = target;
+            EfficiencyProfile = target == BbsfwConnection.Controller.BBSHD ? MotorEfficiencyProfile.BBSHD :
+                target == BbsfwConnection.Controller.TSDZ2 ? MotorEfficiencyProfile.TSDZ2 : MotorEfficiencyProfile.BBS02B;
 
 			UseFreedomUnits = Properties.Settings.Default.UseFreedomUnits;
 			MaxCurrentAmps = 0;
@@ -690,6 +706,7 @@ namespace BBSFW.Model
 			}
 
             CurrentRampSmoothnessPercent = 0;
+            AdaptiveComfort = false;
             UseVoltageCompensation = false;
             if (migrateLegacyFlags) MigrateLegacyVoltageCompensation();
 			return true;
@@ -719,13 +736,26 @@ namespace BBSFW.Model
             if (!ParseConfigPrefix(buffer.Take(ByteSizeV5).ToArray(), false)) return false;
             UseVoltageCompensation = buffer[154] != 0;
             CurrentRampSmoothnessPercent = buffer[155];
+            return StandardAssistLevels.Concat(SportAssistLevels).All(level => IsAdaptiveLevelValid(level) &&
+                !(level.Type.HasFlag(AssistFlagsType.PasAdaptive) && level.Type.HasFlag(AssistFlagsType.PasVariable)));
+        }
+
+        public bool ParseFromBufferV8(byte[] buffer)
+        {
+            if (buffer.Length != ByteSizeV8 || buffer[155] > 100 || (buffer[154] & 0xf0) != 0 ||
+                ((buffer[154] >> 1) & 3) > 2) return false;
+            if (!ParseConfigPrefix(buffer.Take(ByteSizeV5).ToArray(), false)) return false;
+            UseVoltageCompensation = (buffer[154] & 1) != 0;
+            EfficiencyProfile = (MotorEfficiencyProfile)((buffer[154] >> 1) & 3);
+            AdaptiveComfort = (buffer[154] & 8) != 0;
+            CurrentRampSmoothnessPercent = buffer[155];
             return StandardAssistLevels.Concat(SportAssistLevels).All(IsAdaptiveLevelValid);
         }
 
         private static bool IsAdaptiveLevelValid(AssistLevel level) =>
             !level.Type.HasFlag(AssistFlagsType.PasAdaptive) ||
             (level.Type.HasFlag(AssistFlagsType.Pas) &&
-             (level.Type & (AssistFlagsType.PasTorque | AssistFlagsType.PasVariable | AssistFlagsType.Cruise)) == 0 &&
+             (level.Type & (AssistFlagsType.PasTorque | AssistFlagsType.Cruise)) == 0 &&
              float.IsFinite(level.TorqueAmplificationFactor) && level.TorqueAmplificationFactor >= 0.1f && level.TorqueAmplificationFactor <= 25.5f &&
              Math.Abs(level.TorqueAmplificationFactor * 10 - Math.Round(level.TorqueAmplificationFactor * 10)) < 0.0001);
 
@@ -793,7 +823,7 @@ namespace BBSFW.Model
 					bw.Write((byte)Math.Round(SportAssistLevels[i].TorqueAmplificationFactor * 10));
 				}
 
-                bw.Write(UseVoltageCompensation);
+                bw.Write((byte)((UseVoltageCompensation ? 1 : 0) | ((int)EfficiencyProfile << 1) | (AdaptiveComfort ? 8 : 0)));
                 bw.Write((byte)CurrentRampSmoothnessPercent);
 				return s.ToArray();
 			}
@@ -807,6 +837,8 @@ namespace BBSFW.Model
 			MaxCurrentAmps = cfg.MaxCurrentAmps;
 			CurrentRampAmpsSecond = cfg.CurrentRampAmpsSecond;
             UseVoltageCompensation = cfg.UseVoltageCompensation;
+            EfficiencyProfile = cfg.EfficiencyProfile;
+            AdaptiveComfort = cfg.AdaptiveComfort;
             CurrentRampSmoothnessPercent = cfg.CurrentRampSmoothnessPercent;
 			MaxBatteryVolts = cfg.MaxBatteryVolts;
 			LowCutoffVolts = cfg.LowCutoffVolts;
@@ -892,8 +924,9 @@ namespace BBSFW.Model
 			}
 		}
 
-		public void Validate()
-		{
+        public void Validate()
+        {
+            if (!Enum.IsDefined(EfficiencyProfile)) throw new Exception("Select BBS02B, BBSHD or TSDZ2 efficiency profile.");
 			ValidateLimits(MaxCurrentAmps, 5, MaxCurrentLimitAmps, "Max Current (A)");
 			ValidateLimits(CurrentRampAmpsSecond, 1, 255, "Current Ramp (A/s)");
             ValidateLimits(CurrentRampSmoothnessPercent, 0, 100, "Ramp Smoothness (%)");
@@ -949,7 +982,7 @@ namespace BBSFW.Model
         {
             if (level.Type.HasFlag(AssistFlagsType.PasAdaptive))
             {
-                if (!IsAdaptiveLevelValid(level)) throw new Exception(name + ": Adaptive Power requires PAS, a 10–2550 W budget in 10 W steps, and no other PAS variant.");
+                if (!IsAdaptiveLevelValid(level)) throw new Exception(name + ": Adaptive Power requires PAS, a 10–2550 W budget in 10 W steps, and no torque or cruise variant.");
                 uint maximum = GetAdaptivePowerLimitWatts(level);
                 if (Math.Round(level.TorqueAmplificationFactor * 100f) > maximum)
                     throw new Exception(name + $": PAS budget exceeds the configured current/voltage ceiling ({maximum} W). Reduce the budget or choose Motor Disabled when the ceiling is below 10 W.");
