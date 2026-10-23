@@ -89,10 +89,64 @@ recovery timer is introduced. Motor output remains off while startup ADC data
 is unavailable.
 
 New defaults select **Controller** for BBS02/BBSHD and **Disabled** for TSDZ2.
-**Saved selections remain unchanged.** On BBSHD, **All requires an installed
-motor thermistor**. If it is absent, select Controller before riding. An enabled
+**Saved selections remain unchanged.** On BBSHD, **All requires a verified
+original motor thermistor**. No additional thermistor or hardware modification
+is required: stock hardware without that optional input works with Controller.
+If it is absent, select Controller before riding. An enabled
 but missing sensor intentionally stops the motor; silently disabling it would
-contradict its declared presence. The Windows tooltip explains these choices.
+contradict its declared presence.
+
+### Factory hardware compatibility and upgrade review
+
+| Factory hardware | Setting | Supported behavior |
+| --- | --- | --- |
+| BBS02B with its supported controller/MOSFET thermistor | Controller (default) | Existing controller conversion and overtemperature protection; no motor input is invented. |
+| Supported stock BBSHD controller with no optional original motor thermistor | Controller (default) | Controller protection stays active. An open, shorted or not-yet-sampled optional motor input is ignored because it is disabled. No extra sensor is required. |
+| Supported BBSHD with an original motor NTC thermistor matching the existing 10 kΩ / β3990 model | All | Existing controller and motor protection, with the existing NTC conversion. |
+| Supported BBSHD with an original motor PTC thermistor matching the existing approximately 1 kΩ lookup table | All | Existing controller and motor protection, with the existing PTC conversion and lookup table. |
+| Base supported TSDZ2 hardware | Disabled (default) | These controller/motor temperature inputs are unavailable; the firmware does not infer nonexistent temperatures. |
+| BBSHD with All/Motor selected but factory motor-sensor presence unknown | Verify before writing/riding | Selection alone is not evidence of a physical sensor. Absent/invalid enabled motor input stops assistance with `0x14`; no automatic downgrade to Controller. |
+
+This matrix describes the existing electrical interfaces, not a verified list of
+every factory motor/controller revision. Follow the repository's controller/MCU
+compatibility list independently. Motor labels alone do not establish whether an
+original motor sensor is present, which type it is, or whether it works.
+
+Use the updated Windows tool to read the controller or open its saved XML before
+upgrading. A saved All/Motor selection remains enabled. The System card shows a
+visible, wrapping factory-verification warning for BBSHD and unbound files; the
+existing mandatory confirmation repeats it on every configuration write against
+an actual BBSHD connection. It explains `0x14`, controller-only factory support,
+original NTC/PTC support and the absence of any installation requirement. There
+is no persisted presence or acknowledgement flag, no automatic sensor detection
+and no automatic removal of motor protection. A known fitted but faulty sensor
+must be repaired, not silently bypassed. Changing to Controller is an explicit
+hardware-specific choice for a unit confirmed not to have the optional sensor.
+
+Startup ADC zero keeps enabled protection fail-closed until a valid sample is
+available. A controller-only BBSHD can run once its controller reading is valid,
+even while the disabled optional motor input remains at either invalid rail.
+All waits for both enabled inputs. The existing first-valid-reading NTC/PTC
+classification is retained; invalid rail samples cannot classify a sensor.
+
+`tests/factory_thermal_test.c` combines the production sensor conversion,
+battery and application pipeline with mocked hardware. It covers controller-only
+BBS02B/BBSHD, original NTC/PTC BBSHD cases, optional-sensor absence, open/short
+rails before and after startup, fault recovery, full-throttle behavior, controller
+overtemperature and immediate braking. Portable configuration tests cover v2–v8
+All preservation, safe defaults for v1 without a temperature field, XML imports
+and warning notifications. Windows CI checks the
+visible warning in both themes and the real write-confirmation handler without
+opening a serial port. These are deterministic software regressions, not physical
+factory-sensor certification.
+
+This compatibility follow-up changes no production firmware source, configuration
+field or sensor algorithm. Native builds are compared byte-for-byte with PR #10
+head `04009bf`; incremental flash, static RAM and firmware stack changes are zero.
+The earlier complete-PR measurements and hardware-validation limits below remain.
+The follow-up passes 660 host test groups, 112 portable .NET checks, all three
+native size guards and sensor/SOC MCU probes. The Windows test project cross-build
+passes without warnings or errors; its runtime/theme checks run on Windows CI.
 
 The 5.1 kΩ divider and BBSHD temperature connections were checked against the
 repository's `drawings/pcb/bbshd.sch` and `drawings/bbshd.pdf`; pin mapping, ADC

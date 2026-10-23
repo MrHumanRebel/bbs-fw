@@ -337,6 +337,9 @@ namespace BBSFW.ViewModel
 			}
 		}
 
+        public string MotorTemperatureWarning => _config.GetMotorTemperatureWarning(_config.Target);
+        public bool HasMotorTemperatureWarning => !string.IsNullOrEmpty(MotorTemperatureWarning);
+
 		public Configuration.TemperatureSensor UseTemperatureSensor
 		{
 			get { return _config.UseTemperatureSensor; }
@@ -346,6 +349,8 @@ namespace BBSFW.ViewModel
 				{
 					_config.UseTemperatureSensor = value;
 					OnPropertyChanged(nameof(UseTemperatureSensor));
+                    OnPropertyChanged(nameof(MotorTemperatureWarning));
+                    OnPropertyChanged(nameof(HasMotorTemperatureWarning));
 				}
 			}
 		}

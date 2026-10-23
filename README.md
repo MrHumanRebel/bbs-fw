@@ -21,6 +21,11 @@ A configurable alternative to stock firmware, with refined pedal assist and thro
 
 - **Battery management** — Adjustable low-voltage cutoff, voltage calibration and gradual current reduction as the battery approaches its limit.
 - **Thermal protection** — Progressive power limiting using installed motor/controller temperature sensors, with fail-safe stops for invalid enabled sensors.
+
+  Stock BBS02B/BBSHD defaults to **Controller**; no additional motor thermistor is required.
+  On BBSHD, keep **All** only for a verified original NTC/PTC motor sensor. Saved
+  selections remain enabled; an absent or invalid enabled motor sensor stops assistance
+  with `0x14`. [Factory sensor compatibility and upgrade review](doc/sensor-soc-hardening.md#factory-hardware-compatibility-and-upgrade-review).
 - **Adaptive Efficiency PAS** — Select a per-level cadence-aware watt budget with unchanged current and safety ceilings. [Behavior and limitations](doc/adaptive-power-pas.md).
 - **Voltage-compensated PAS** — Optional global compensation to help maintain more consistent electrical input power as battery voltage drops.
 - **Live telemetry** — Monitor wheel speed, battery voltage, current, electrical power and controller status through the Windows tool.

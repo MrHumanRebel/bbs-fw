@@ -10,6 +10,14 @@ for target in BBS02 BBSHD TSDZ2; do
     for scenario in spacing startup recovery boundary direction rejected_timeout stop_restart; do "$test_dir/pas_sensor" "$scenario"; done
     cc -std=c99 -D"$target" -I src/firmware tests/temperature_sensor_test.c -lm -o "$test_dir/temperature"
     for scenario in disabled startup_fault very_hot ntc ptc; do "$test_dir/temperature" "$scenario"; done
+    if [ "$target" != TSDZ2 ]; then
+        cc -std=c99 -D"$target" -I src/firmware tests/factory_thermal_test.c -lm -o "$test_dir/factory_thermal"
+        "$test_dir/factory_thermal" controller_only
+        "$test_dir/factory_thermal" controller_startup
+        if [ "$target" = BBSHD ]; then
+            for scenario in ntc ptc absent startup startup_ptc; do "$test_dir/factory_thermal" "$scenario"; done
+        fi
+    fi
     cc -std=c99 -D"$target" -I src/firmware tests/battery_soc_test.c -o "$test_dir/soc"
     for scenario in map continuous actual_current transient invalid_wrap; do "$test_dir/soc" "$scenario"; done
     cc -std=c99 -D"$target" -DTEST_SW102_MAP -I src/firmware tests/battery_soc_test.c -o "$test_dir/soc_sw102"

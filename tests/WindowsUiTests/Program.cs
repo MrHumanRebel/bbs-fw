@@ -60,8 +60,9 @@ internal static class Program
         var window = new MainWindow();
         int confirmations = 0;
         bool approveWrites = false;
+        string lastConfirmation = null;
         Action onConfirmation = null;
-        var vm = new MainViewModel((_, _) => { ++confirmations; onConfirmation?.Invoke(); return approveWrites; });
+        var vm = new MainViewModel((_, message) => { ++confirmations; lastConfirmation = message; onConfirmation?.Invoke(); return approveWrites; });
         window.DataContext = vm;
         vm.ConfigVm.MaxCurrentAmps = 25;
         vm.ConfigVm.MaxBatteryVolts = 58.8f;
@@ -83,6 +84,7 @@ internal static class Program
         vm.ConfigVm.PasKeepCurrentCadenceRpm = 40;
         vm.ConfigVm.ThrottleStartVoltageMillivolts = 1000;
         vm.ConfigVm.ThrottleEndVoltageMillivolts = 4000;
+        vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.All;
         var adaptiveLevel = vm.ConfigVm.StandardAssistLevels[1];
         adaptiveLevel.SelectedPasVariant = adaptiveLevel.AssistPasVariantOptions.First(v => v.Value == AssistLevelViewModel.AssistPasVariant.AdaptiveEfficiency);
         adaptiveLevel.PasBudgetWatts = 250;
@@ -165,6 +167,16 @@ internal static class Program
                         }
                         if (index == 2)
                         {
+                            var temperature = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "TemperatureSensor");
+                            var thermalWarning = descendants.OfType<TextBlock>().First(t => AutomationProperties.GetAutomationId(t) == "MotorTemperatureWarning");
+                            Check(thermalWarning.IsVisible && thermalWarning.Text.Contains("presence is unverified") &&
+                                thermalWarning.Text.Contains("0x14"), "All visibly warns about unverified factory motor sensing in either theme");
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.Controller; Pump();
+                            Check(!thermalWarning.IsVisible && !vm.ConfigVm.HasMotorTemperatureWarning,
+                                "controller-only stock hardware does not show a missing optional sensor warning");
+                            temperature.SelectedItem = BBSFW.Model.Configuration.TemperatureSensor.All; Pump();
+                            Check(thermalWarning.IsVisible && vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
+                                "explicit All selection preserves protection and restores the visible warning");
                             var profile = descendants.OfType<ComboBox>().First(c => AutomationProperties.GetAutomationId(c) == "EfficiencyProfile");
                             Check(profile.Items.Count == 3 && profile.Items.Cast<object>().Select(x => x.ToString()).SequenceEqual(new[] { "BBS02B", "BBSHD", "TSDZ2" }), "System exposes exactly three efficiency profiles");
                             var comfort = descendants.OfType<CheckBox>().First(c => AutomationProperties.GetAutomationId(c) == "AdaptiveComfort");
@@ -209,7 +221,12 @@ internal static class Program
             var resetButton = buttons.First(b => AutomationProperties.GetAutomationId(b) == "ResetConfiguration");
             Check(writeButton.IsEnabled && resetButton.IsEnabled, "controller actions enable after connecting");
             writeButton.Command.Execute(null);
+            Check(lastConfirmation.Contains("presence is unverified") && lastConfirmation.Contains("0x14") &&
+                vm.ConfigVm.UseTemperatureSensor == BBSFW.Model.Configuration.TemperatureSensor.All,
+                "every All write confirmation includes the hardware warning and rejection preserves motor protection");
+            vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.Controller;
             vm.WriteFlashCommand.Execute(null);
+            Check(!lastConfirmation.Contains("presence is unverified"), "controller-only write confirmation does not require an optional thermistor");
             resetButton.Command.Execute(null);
             vm.ResetFlashCommand.Execute(null);
             vm.CalibrationVm.MeasuredBatteryVolts = 50;
@@ -218,10 +235,12 @@ internal static class Program
             Check(confirmations == 6 && !vm.ControllerOperations.IsBusy, "buttons, shared menu commands and both calibration writes all ask and honor rejection");
             long previousSession = vm.ConnectionVm.SessionId;
             approveWrites = true;
+            vm.ConfigVm.UseTemperatureSensor = BBSFW.Model.Configuration.TemperatureSensor.All;
             onConfirmation = () => { disconnected.Invoke(vm.ConnectionVm, null); Connect(); };
             vm.WriteFlashCommand.Execute(null);
             Check(confirmations == 7 && vm.ConnectionVm.SessionId != previousSession && !vm.ControllerOperations.IsBusy,
                 "the real connection lifecycle invalidates approved writes after reconnecting in the dialog");
+            Check(lastConfirmation.Contains("0x14"), "repeated All writes require a fresh hardware warning");
             disconnected.Invoke(vm.ConnectionVm, null);
             vm.WriteFlashCommand.Execute(null);
             Check(confirmations == 7 && !vm.CanUseController, "disconnected Write cannot prompt or send");

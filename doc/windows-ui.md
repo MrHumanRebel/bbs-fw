@@ -38,6 +38,14 @@ of indiscriminate trimming, so trimming is not enabled.
 
 ## Validation
 
+The System temperature card displays a factory-hardware warning whenever BBSHD
+motor sensing is selected (including saved All settings and unbound XML imports).
+Every BBSHD configuration-write confirmation repeats the warning. Stock BBSHD
+works with Controller and requires no additional thermistor. All retains original
+NTC/PTC support and fails closed with `0x14` when its enabled motor input is
+invalid; no protection is silently disabled. See the [factory compatibility and
+upgrade matrix](sensor-soc-hardening.md#factory-hardware-compatibility-and-upgrade-review).
+
 Cross-publish on Linux with Windows targeting enabled checks XAML and C#
 compilation. Host tests check configuration migration and curve arithmetic.
 The Windows-only layout suite renders the actual WPF content offscreen, avoiding

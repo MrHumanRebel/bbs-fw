@@ -104,6 +104,21 @@ namespace BBSFW.Model
 			All = 0x03
 		}
 
+        // Configuration declares protection, not physical sensor detection. Keep
+        // this warning derived: no persisted presence flag or automatic downgrade.
+        public string GetMotorTemperatureWarning(BbsfwConnection.Controller controller)
+        {
+            if ((UseTemperatureSensor & TemperatureSensor.Motor) == 0 ||
+                (controller != BbsfwConnection.Controller.BBSHD && controller != BbsfwConnection.Controller.Unknown))
+                return string.Empty;
+
+            return "BBSHD motor sensor enabled: factory presence is unverified. " +
+                "Controller supports stock hardware without an optional motor thermistor; no additional sensor is required. " +
+                "Keep All/Motor only for a confirmed original NTC/PTC motor thermistor. " +
+                "An absent or invalid enabled motor sensor stops assistance (0x14). " +
+                "Existing protection is preserved; verify the factory hardware before changing this setting.";
+        }
+
 		public enum WalkModeData
 		{
 			Speed = 0,

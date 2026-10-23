@@ -1,5 +1,12 @@
 # Speed sensor regression tests
 
+Factory thermal compatibility regressions also run through `sh tests/run.sh`:
+`factory_thermal_test.c` combines the production sensor and app pipeline for
+controller-only BBS02B/BBSHD, original BBSHD NTC/PTC, optional-sensor absence,
+startup ADC readiness, open/short faults, controller overheating and braking
+under full throttle. Portable `ThermalConfigurationTests` verify saved All
+preservation and warnings; Windows UI tests cover visible and per-write warnings.
+
 Run all C regression suites with `sh tests/run.sh`. For the optional voltage
 compensation feature, see [#104](../doc/issue-104-pas-voltage-compensation.md).
 Its configuration serialization tests run with

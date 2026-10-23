@@ -36,6 +36,7 @@ class Program
         await ControllerOperationTests.Run(Check);
         PasBudgetTests.Run(Check);
         EfficiencyTests.Run(Check);
+        ThermalConfigurationTests.Run(Check);
         byte[] telemetry = {1,4,1,1,224,1,4,3,232,1,24,1,1,0,0};
         telemetry[14] = (byte)telemetry.Take(14).Sum(x => x);
         var live = VirtualTelemetry.Decode(telemetry);
