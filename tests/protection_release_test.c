@@ -35,7 +35,7 @@ int main(int argc, char **argv)
         {
             now += 130;
             requested_current = 100;
-            apply_low_voltage_limit();
+            apply_low_voltage_limit(false);
             if (requested_current < 90) break;
         }
         assert(requested_current < 90);

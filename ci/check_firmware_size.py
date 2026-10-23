@@ -13,9 +13,11 @@ except ImportError:  # Direct script execution.
     from validate_release import validate_hex
 
 BUDGETS = {
-    "BBS02": {"flash": 28064, "xram": 861, "stack_available": 156},
-    "BBSHD": {"flash": 29648, "xram": 875, "stack_available": 144},
-    "TSDZ2": {"code": 16000, "data": 581, "initialized": 61, "image_span": 16736},
+    # The coordinated speed envelope and recoverable LVC cost 313/313/107 bytes
+    # versus 31f73d5. Reentrant LVC frees 8051 static spills; enforce that saving.
+    "BBS02": {"flash": 28256, "xram": 860, "stack_available": 164},
+    "BBSHD": {"flash": 29824, "xram": 874, "stack_available": 152},
+    "TSDZ2": {"code": 16064, "data": 581, "initialized": 61, "image_span": 16800},
 }
 
 

@@ -152,7 +152,7 @@ static bool apply_throttle(uint8_t throttle_percent);
 // Limiters report an active protection even when demand is already below its cap.
 static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool throttle_override);
 static bool apply_thermal_limit(void);
-static bool apply_low_voltage_limit(void);
+static bool apply_low_voltage_limit(bool recover) RAM_REENTRANT;
 #if HAS_SHIFT_SENSOR_SUPPORT
 static bool apply_shift_sensor_interrupt(void);
 #endif
@@ -283,7 +283,8 @@ void app_process()
 
 	bool speed_limiting = apply_speed_limit(throttle_percent, pas_engaged, throttle_override);
 	bool thermal_limiting = apply_thermal_limit();
-	bool lvc_limiting = apply_low_voltage_limit();
+	bool lvc_limiting = apply_low_voltage_limit(!throttle_override &&
+        (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY);
 	bool shift_limiting =
 #if HAS_SHIFT_SENSOR_SUPPORT
 		apply_shift_sensor_interrupt();
@@ -606,15 +607,14 @@ static uint8_t efficiency_pas_current(uint8_t current) RAM_REENTRANT
                 (cadence < 180u &&
                  (uint16_t)current * 10u < (uint16_t)assist_level_data.level.target_current_percent * 3u))
                 assist_level_data.pas.efficiency.launch &= 0x3fu;
-            if ((uint32_t)speed * 100u >= (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 97u ||
-                ((assist_level_data.pas.efficiency.launch & 0x80u) &&
-                 (uint32_t)speed * 4u >= (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 3u))
+            // Speed approach is handled once, after independent throttle arbitration.
+            if ((assist_level_data.pas.efficiency.launch & 0x80u) &&
+                (uint32_t)speed * 4u >= (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 3u)
             {
                 if (assist_level_data.pas.efficiency.scale > EFFICIENCY_MIN_SCALE)
                     --assist_level_data.pas.efficiency.scale;
             }
-            else if ((uint32_t)speed * 100u < (uint32_t)assist_level_data.max_wheel_speed_rpm_x10 * 93u &&
-                assist_level_data.pas.efficiency.scale < 100u)
+            else if (assist_level_data.pas.efficiency.scale < 100u)
                 ++assist_level_data.pas.efficiency.scale;
         }
     }
@@ -887,7 +887,20 @@ static bool apply_speed_limit(uint8_t throttle_percent, bool pas_engaged, bool t
 			else
 			{
 				// linear ramp down when approaching max speed.
-				uint8_t tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_rpm_x10, requested_current, 0);
+                bool efficiency_pas = !throttle_override &&
+                    (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) == ASSIST_FLAG_PAS_EFFICIENCY;
+                uint8_t tmp = efficiency_pas ? 100u : requested_current;
+                tmp = (uint8_t)MAP32(current_speed_rpm_x10, max_speed_ramp_low_rpm_x10, max_speed_rpm_x10, tmp, 0);
+                if (efficiency_pas)
+                {
+                    // Two bounded quadratics ease both ends of the speed envelope.
+                    // Only PAS uses this curve; throttle keeps the original linear limit.
+                    if (tmp <= 50u)
+                        tmp = (uint16_t)tmp * tmp / 50u;
+                    else
+                        tmp = 100u - (uint16_t)(100u - tmp) * (100u - tmp) / 50u;
+                    tmp = (uint16_t)requested_current * tmp / 100u;
+                }
 				if (requested_current > tmp)
 				{
 					requested_current = tmp;
@@ -961,12 +974,23 @@ static bool apply_thermal_limit(void)
 	return false;
 }
 
-static bool apply_low_voltage_limit(void)
+static bool apply_low_voltage_limit(bool recover) RAM_REENTRANT
 {
+    // Reuse the existing four-byte filter allocation, including recovery dwell.
+    // Initialize the struct member directly: no assumption about MCU byte order.
+    static union
+    {
+        struct { uint16_t voltage; uint8_t stable; } value;
+        uint32_t allocation;
+    } filter = {{10000u, 0u}};
+#if defined(__SDCC_mcs51) || defined(__SDCC_stm8)
+    typedef char lvc_filter_must_not_grow[(sizeof(filter) == 4) ? 1 : -1];
+#endif
     // A missing/invalid voltage or the actual cutoff stops every demand source immediately.
     uint16_t raw_voltage_x10 = motor_get_battery_voltage_x10();
     if (raw_voltage_x10 <= (uint16_t)g_config.low_cut_off_v * 10u || raw_voltage_x10 > 1000u)
     {
+        filter.value.stable = 0;
         requested_current = 0;
         return true;
     }
@@ -974,17 +998,36 @@ static bool apply_low_voltage_limit(void)
 	static RAM_BOOL lvc_limiting = false;
 
 	static uint32_t last_voltage_reading_ms;
-	static int32_t flt_min_bat_volt_x100 = 100 * 100;
 
-	if ((uint32_t)(system_ms() - last_voltage_reading_ms) > 125u)
+    uint32_t elapsed = system_ms() - last_voltage_reading_ms;
+    // A mode/throttle change or a missed sample breaks the recovery dwell.
+    if (!recover || elapsed > 250u)
+    {
+        filter.value.stable = 0;
+    }
+	if (elapsed > 125u)
 	{
-		last_voltage_reading_ms = system_ms();
-		int32_t voltage_reading_x100 = motor_get_battery_voltage_x10() * 10ul;
+		last_voltage_reading_ms += elapsed;
+		uint16_t voltage_reading_x100 = raw_voltage_x10 * 10u;
 
-		if (voltage_reading_x100 < flt_min_bat_volt_x100)
-		{
-			flt_min_bat_volt_x100 = EXPONENTIAL_FILTER(flt_min_bat_volt_x100, voltage_reading_x100, 8);
-		}
+        if (voltage_reading_x100 < filter.value.voltage)
+        {
+            // Keep the original fast downward response and cancel recovery dwell.
+            filter.value.voltage -= (filter.value.voltage - voltage_reading_x100) / 8u;
+            filter.value.stable = 0;
+        }
+        else if (recover && voltage_reading_x100 >= filter.value.voltage + 50u &&
+            voltage_reading_x100 >= lvc_ramp_down_end_voltage_x100 + 50u)
+        {
+            // Require eight consecutive samples (~1 s), then recover four times
+            // more slowly than a sag. A 0.5 V deadband rejects small rebounds.
+            if (filter.value.stable < 7u)
+                ++filter.value.stable;
+            else
+                filter.value.voltage += (voltage_reading_x100 - filter.value.voltage) / 32u;
+        }
+        else
+            filter.value.stable = 0;
 
 		if (eventlog_is_enabled() && system_ms() > next_log_volt_ms)
 		{
@@ -993,7 +1036,7 @@ static bool apply_low_voltage_limit(void)
 		}
 	}
 
-	uint16_t voltage_x100 = flt_min_bat_volt_x100;
+	uint16_t voltage_x100 = filter.value.voltage;
 
 	if (voltage_x100 <= lvc_ramp_down_start_voltage_x100)
 	{
@@ -1161,9 +1204,16 @@ static void apply_current_ramp_up(bool enable) RAM_REENTRANT
         if (!enable || target <= state.tracking.position)
         {
             // Stops and falling safety requests take effect immediately.
+            // Small Efficiency demand jitter must not restart the 20 ms clock
+            // or erase velocity on every application tick. Output still clamps
+            // immediately to every lower request, including protective limits.
+            if (!enable || target == 0 || state.tracking.position - target > 128u ||
+                (assist_level_data.level.flags & ASSIST_FLAG_PAS_EFFICIENCY) != ASSIST_FLAG_PAS_EFFICIENCY)
+            {
+                state.tracking.velocity = 0;
+                state.tracking.last_ms = now16;
+            }
             state.tracking.position = target;
-            state.tracking.velocity = 0;
-            state.tracking.last_ms = now16;
         }
         else if ((uint16_t)(now16 - state.tracking.last_ms) >= 20u)
         {

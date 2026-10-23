@@ -136,3 +136,26 @@ all 255 budgets, schema-5/6 migration and rejection of ambiguous flag combinatio
 or unrepresentable budgets. Windows tests render Adaptive Power and verify the
 watt input and preview bindings in both themes at all three viewport sizes.
 See [the algorithm, memory measurements and research limitations](../doc/adaptive-power-pas.md).
+
+## Adaptive Efficiency speed, sag and target-transition regressions
+
+`efficiency_refinement_test.c` runs for BBS02/BBSHD/TSDZ2 with 25/30/20 A limits.
+It sweeps speed against all 1–100% command values, checks soft-region endpoints,
+low speed limits, exact hard cutoff, unchanged throttle speed shaping and
+immediate 100% throttle arbitration. It also tests slow LVC recovery after eight
+eligible samples, recovery interruption/deadband, invalid inputs, wraparound,
+frozen nonrecovering LVC equivalence, and full-pipeline mode/throttle scope.
+Small-target tests cover all 101 smoothness values while maintaining current,
+rate and hard-stop bounds.
+
+The three-phase synthetic road-response test checks load increase/removal,
+settling and absence of a large limit cycle in that deliberately simple model.
+Its printed ranges are offline test results, not measured human watts, motor
+load, road grade, physical efficiency or production telemetry. No test recorder
+or plant model is linked into firmware.
+
+`tests/run_target_control.py` exercises the actual SDCC-produced control code on
+all three MCU targets, including the speed curve, throttle, LVC recovery dwell
+and target jitter. Use `--baseline-ref 31f73d5` for the same input sequence against
+the preceding implementation, with only the new-policy assertions skipped.
+See the [exact size/stack comparison](../doc/firmware-safety-and-memory.md).

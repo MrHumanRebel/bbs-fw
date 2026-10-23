@@ -26,6 +26,17 @@ void passed(void) { failure_code = 0; for (;;) {} }
 void failed(void) { for (;;) {} }
 #define CHECK(x, code) do { if (!(x)) { failure_code = code; failed(); } } while (0)
 void probe_begin(void) {}
+uint8_t probe_lvc(bool recover)
+{
+    now += 130;
+    requested_current = 100;
+#ifdef BASELINE_PROBE
+    apply_low_voltage_limit();
+#else
+    apply_low_voltage_limit(recover);
+#endif
+    return requested_current;
+}
 void main(void)
 {
     setup();
@@ -54,6 +65,18 @@ void main(void)
         CHECK(value >= 25, 2); /* Includes the 405 ms retarget and clock wrap. */
         value = 0; test_ramp_up(&value, true); CHECK(value == 0, 3);
     }
+    /* A one-percent request oscillation cannot postpone a scheduled rise. */
+    g_config.current_ramp_amps_s = 100;
+    g_config.current_ramp_smoothness_percent = 0;
+    uint8_t jitter = 20;
+    now = 0; test_ramp_up(&jitter, false);
+    now = 5; jitter = 20; test_ramp_up(&jitter, true);
+    now = 10; jitter = 21; test_ramp_up(&jitter, true);
+    now = 15; jitter = 20; test_ramp_up(&jitter, true);
+    now = 20; jitter = 100; test_ramp_up(&jitter, true);
+#ifndef BASELINE_PROBE
+    CHECK(jitter > 20 && jitter <= 28, 14);
+#endif
     g_config.current_ramp_amps_s = 100;
 #if defined(BBSHD)
     g_config.max_current_amps = 30;
@@ -92,6 +115,40 @@ void main(void)
 #if HAS_TORQUE_SENSOR
     pedaling = true; torque_valid = false; run(5); CHECK(motor_current == 0, 10);
 #endif
+    /* Sample the real soft-LVC filter on the target ISA, including its dwell. */
+    voltage = 440;
+    uint8_t cap = 100;
+    for (uint8_t sample = 0; sample < 150; ++sample) cap = probe_lvc(true);
+    CHECK(cap > 20 && cap < 90, 15);
+    voltage = 480;
+    for (uint8_t sample = 0; sample < 7; ++sample) CHECK(probe_lvc(true) == cap, 16);
+#ifndef BASELINE_PROBE
+    CHECK(probe_lvc(true) > cap, 17);
+#else
+    probe_lvc(true);
+#endif
+    for (uint8_t sample = 0; sample < 100; ++sample) probe_lvc(true);
+    voltage = g_config.low_cut_off_v * 10u;
+    CHECK(probe_lvc(true) == 0, 18);
+    voltage = 480; temperature = 0; torque_valid = true; pedaling = true;
+    g_config.assist_levels[0][1].flags |= ASSIST_FLAG_THROTTLE;
+    reload_assist_params();
+    /* Nonlinear speed shaping is PAS-only; 100% throttle still overrides. */
+    wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 - speed_limit_ramp_interval_rpm_x10 / 3u;
+    uint8_t eased = 100;
+    test_speed_limit(&eased, 0, true, false);
+#ifndef BASELINE_PROBE
+    CHECK(eased >= 20 && eased <= 23, 19);
+#endif
+    eased = 100; test_speed_limit(&eased, 100, true, true);
+    CHECK(eased >= 32 && eased <= 34, 20);
+    wheel_speed = assist_level_data.max_wheel_speed_rpm_x10;
+    eased = 100; test_speed_limit(&eased, 0, true, false); CHECK(eased == 0, 21);
+    wheel_speed = 0; throttle = 100; run(5);
+#ifndef BASELINE_PROBE
+    CHECK(motor_current == 100, 22);
+#endif
+    brake = true; run(5); CHECK(motor_current == 0, 23);
     passed();
 }
 '''

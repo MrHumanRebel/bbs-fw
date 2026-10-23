@@ -56,6 +56,11 @@ for target in BBS02 BBSHD TSDZ2; do
     for scenario in budget_fraction clipped_budget real_budget_150 real_budget_250 real_budget_500 real_budget_750 load_hysteresis speed_target sensors comfort clock_mode slew; do
         "$test_dir/efficiency" "$scenario"
     done
+    cc -std=c99 -D"$target" -Wall -Wextra -Wno-type-limits -Wno-sign-compare \
+        -I src/firmware tests/efficiency_refinement_test.c -o "$test_dir/refinement"
+    for scenario in speed_curve speed_recovery synthetic_ride throttle lvc_recovery lvc_hysteresis lvc_legacy lvc_scope_efficiency lvc_scope_legacy lvc_scope_adaptive lvc_scope_throttle jitter; do
+        "$test_dir/refinement" "$scenario"
+    done
 	if [ "$target" = TSDZ2 ]; then
 		"$test_dir/voltage" torque
 	else

@@ -57,8 +57,10 @@ or virtual throttle, and walk assist.
   enabled, working sensor; some supported motors/controllers lack these sensors.
 - A raw voltage at/below configured LVC, zero, or above the protocol's valid
   100 V range immediately commands zero for every demand source. The existing
-  minimum-following filtered LVC ramp remains; it is not changed to a recovery
-  estimator. Its sampling interval now survives millisecond-counter wrap.
+  downward filtered LVC ramp remains algebraically equivalent. Adaptive Efficiency
+  alone permits slow soft recovery after sustained voltage margin and a dwell;
+  independent throttle and other modes do not drive that recovery. The filter
+  remains shared across mode changes. Sampling survives millisecond-counter wrap.
 - Reported LVC, Hall and current-sense motor faults block every demand source.
   The undocumented BBS02 `MOTOR_ERROR_POWER_RESET` bit keeps its existing error
   reporting without acquiring a speculative new interlock. Unknown status bits
@@ -132,8 +134,9 @@ optimization or unsafe-memory-read flags are enabled.
 
 ## Adaptive Efficiency: zero additional static RAM
 
-The comparison below uses the current pre-feature baseline `4a50c09`, clean
-SDCC 4.5.0 builds and the same target settings. The research datasets and all
+The comparison below records pre-feature baseline `4a50c09` against `31f73d5`,
+using clean SDCC 4.5.0 builds and the same target settings. The coordinated
+speed/sag refinement is measured separately below. The research datasets and all
 measurement probes stay offline. The existing five-byte PAS cache and seven-byte
 ramp state are reused as unions; compile-time size checks and CI memory budgets
 prevent static-RAM growth.
@@ -197,6 +200,68 @@ BBSHD's 5% soft trim can arm at 250 W without changing an 11% command, because
 that correction is smaller than the existing one-percent command resolution.
 At 500 W the same profile demonstrably changes 22% to 21%. These are requested
 commands in simulation, not measured battery or shaft power.
+
+### Coordinated speed, recoverable soft LVC and target jitter versus `31f73d5`
+
+This follow-up removes the independent 97% trim, adds a single eased PAS speed
+envelope, permits slow soft-LVC recovery only for Adaptive Efficiency without a
+winning throttle, and retains Q7 timing/velocity through small Efficiency target
+changes. The three motor profiles and configuration/wire layouts do not change.
+No telemetry, event, log, buffer, runtime statistic or scheduled task is added.
+
+Clean SDCC 4.5.0 builds, same flags and controller selection:
+
+| Target | Flash before / after / delta | Static RAM before / after | Linker stack before / after |
+| --- | --- | --- | --- |
+| BBS02 / BBS02B | 27,914 / 28,227 / +313 B | XRAM 861 / 860 B (−1) | 156 / 164 B available (+8) |
+| BBSHD | 29,486 / 29,799 / +313 B | XRAM 875 / 874 B (−1) | 144 / 152 B available (+8) |
+| TSDZ2 | Image 16,673 / 16,780 / +107 B; CODE 15,942 / 16,047 (+105) | DATA 581 / 581 B; INITIALIZED 61 / 61 B | SSEG reservation 1 / 1 B |
+
+All other 8051 static/bit areas remain unchanged. The four-byte filter allocation
+is reused for its voltage and recovery dwell, with a native compile-time size
+assertion. LVC arithmetic now uses bounded unsigned 16-bit differences instead
+of signed 32-bit division. Reentrant LVC removes static compiler spills; its
+elapsed-time sample is reused rather than reading the clock repeatedly. No
+additional static RAM is required on any target.
+
+The old flash regression allowances covered the preceding feature set. They are
+explicitly updated for this measured code cost: BBS02 28,256 B, BBSHD 29,824 B;
+TSDZ2 CODE 16,064 B and complete image 16,800 B. These leave only 29/25/17/20 B
+above the new builds, respectively, and are not physical MCU capacities. XRAM
+ceilings tighten to 860/874 B and 8051 stack-availability floors to 164/152 B.
+STM8 DATA/INITIALIZED ceilings remain 581/61 B. Memory-regression tests check
+rejection above the revised limits and below the stack floors.
+
+The identical updated MCU harness was run against `31f73d5` and this follow-up:
+
+| Target | Baseline / updated probe stack extension | Baseline / updated simulator clocks |
+| --- | --- | --- |
+| BBS02 | 31 / 31 B (0) | 2,066,656,152 / 2,046,407,628 |
+| BBSHD | 31 / 31 B (0) | 2,067,592,272 / 2,047,342,404 |
+| TSDZ2 | 74 / 74 B (0) | 31,643,634 / 31,271,394 |
+
+The probe now covers all 101 ramp shapes, small-target timing, the eased PAS
+speed envelope, unchanged throttle speed shaping and immediate full-throttle
+arbitration, LVC dwell/recovery and hard stops on each MCU ISA. The baseline
+skips new-policy assertions and retains its original nonrecovering filter; paths
+therefore differ deliberately despite identical input sequences. Clock counts
+are finite-workload simulator observations, not a physical CPU deadline or
+motor-efficiency measurement. Stack extensions exclude the fixture/main frame
+and interrupts; unchanged probe peaks do not certify real peak stack use.
+
+The host runner passes 544 groups, including exhaustive monotone speed-envelope
+sweeps for every 1–100% input command, 20 km/h and low-limit endpoints, 100%
+throttle, slow recovery, interrupted recovery dwell, mode/throttle scope, frozen
+legacy LVC comparisons across wrap, all 101 jitter shapes and existing safety/
+protocol/migration regressions. Representative curve, LVC-recovery and timing
+assertions fail against `31f73d5` on every target and pass after the change.
+
+An explicitly synthetic three-phase road-response test (load increase/removal)
+settles within a 0.3 km/h peak-to-peak band in its last ten seconds per phase,
+without self-generated crossing of the 20 km/h hard ceiling. It uses 500 W and
+25/30/20 A for BBS02B/BBSHD/TSDZ2. Its simplified drag/inertia response is not a
+measured motor, rider or road model. It cannot establish physical efficiency,
+range gains or universal absence of hunting on real bikes.
 
 ## Verification limits
 

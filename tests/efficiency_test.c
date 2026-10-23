@@ -135,7 +135,8 @@ int main(int argc, char **argv)
         assert(assist_level_data.max_wheel_speed_rpm_x10 == global_speed_limit_rpm * 2);
         pedal_cadence = 600;
         wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 98 / 100;
-        run(5000); assert(assist_level_data.pas.efficiency.scale == EFFICIENCY_MIN_SCALE);
+        run(5000); assert(assist_level_data.pas.efficiency.scale == 100); /* No independent speed trim. */
+        assert(motor_current < adaptive_pas_current());
         wheel_speed = assist_level_data.max_wheel_speed_rpm_x10 * 90 / 100;
         run(2000); assert(assist_level_data.pas.efficiency.scale == 100);
         wheel_speed = assist_level_data.max_wheel_speed_rpm_x10;

@@ -76,8 +76,8 @@ to low cadence and sustained requested demand, with hysteresis. Activation uses
 40% of this level's own cadence-shaped watt budget, or 40% of the level current
 ceiling when that ceiling is the attainable reference. Release uses 30% on both
 references. These are requested-command proxies, not measured motor load. It acts only above
-75% of the configured speed ceiling; near 97% it also trims demand regardless of
-cadence, recovering below 93% when low-cadence derating is inactive. BBS02B and
+75% of the configured speed ceiling, recovering when that condition ends. Speed
+approach uses one eased envelope instead of a separate 97% correction. BBS02B and
 TSDZ2 retain at least 90% of the base request; BBSHD retains at least 95%. Coarse
 current reductions round down rather than erasing a positive one-percent command.
 Very small corrections can round to no current change: BBSHD at 48 V / 30 A,
@@ -88,12 +88,24 @@ falls back to unshaped Adaptive Power; invalid cadence, voltage or the existing
 TSDZ2 torque-sensor fault indication produces zero experimental PAS demand.
 
 A global 100 km/h limit and a 20% level limit give the existing 20 km/h safety
-ceiling, including its original soft approach. The trim manages demand around
-that ceiling; it is not a new cruise-speed guarantee or a measured motor-efficiency
-optimum. Slope, gearing, human power and motor output torque remain unobserved.
+ceiling. Adaptive Efficiency eases PAS current over the existing approach region
+(normally the last 3 km/h, at most half the limit), with zero current at/above
+the same hard ceiling. As speed falls, assistance returns through the existing
+rate/acceleration-limited tracker. The speed envelope has gentle entry/exit
+slopes before command quantization; it is not a cruise-speed guarantee or a
+measured motor-efficiency optimum. Slope, gearing, human power and motor output torque remain unobserved.
 The supplied datasets support test hypotheses, not transferable real-time maps.
 See the [engineering decision](decisions/adaptive-efficiency.md) for profile
 thresholds, evidence quality, memory reuse and validation limits.
+
+Only Adaptive Efficiency also permits slow soft-LVC recovery after sustained
+voltage recovery: eight eligible samples (about one second), a 0.5 V margin and
+an upward filter four times slower than the existing downward filter. Transient
+rebounds, invalid readings, sampling gaps and throttle/mode changes cancel the
+recovery dwell. Hard cutoff and faults remain immediate. Other modes/throttle
+keep downward-only filtering, sharing the existing filter history. Small
+Efficiency target changes retain the Q7 timer/velocity without delaying stops
+or holding output above a reduced request.
 
 No logging, telemetry, diagnostics, measurement buffers, history, runtime
 statistics, extra scheduled tasks or EEPROM fields are added. The existing
@@ -154,9 +166,9 @@ loss estimator, or a verified Wh/km optimizer.
 
 The patch does not alter GPIO, ADC scaling, UART timing/drivers, interrupts,
 watchdog configuration, NEC control firmware, STM8 commutation/FOC constants,
-the existing thermal ramp thresholds or the minimum-following LVC filter. It adds
-a stop above maximum temperature and at raw LVC/invalid voltage, and makes LVC
-sampling wrap-safe. The filter is **not** changed into a voltage-recovery mechanism.
+or the existing thermal ramp thresholds. Hard stops above maximum temperature
+and at raw LVC/invalid voltage remain. Soft-LVC sampling is wrap-safe; only the
+Adaptive Efficiency PAS path gains the bounded recovery described above.
 
 Automated tests exercise budget bounds, voltage sag/recovery and invalid readings,
 all 20 assist levels, optional throttle, stop/coast, current-curve retargeting,
